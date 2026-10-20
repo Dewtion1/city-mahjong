@@ -22,7 +22,7 @@
   canvas { display: block; max-width: 100%; max-height: 100%; aspect-ratio: 9 / 16; border-radius: 22px; box-shadow: 0 18px 50px rgba(0,0,0,.45); touch-action: manipulation; user-select: none; -webkit-user-select: none; background: var(--felt); }
   .sheet { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(16,24,40,.72); backdrop-filter: blur(4px); padding: 16px; z-index: 5; }
   .sheet[hidden] { display: none; }
-  .card { background: var(--paper); color: var(--ink); border-radius: 22px; padding: 22px 20px 18px; width: min(100%, 340px); box-shadow: 0 20px 60px rgba(0,0,0,.4); box-sizing: border-box; }
+  .card { background: var(--paper); color: var(--ink); border-radius: 22px; padding: 22px 20px 18px; width: min(100%, 340px); max-height: calc(100vh - 32px); overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,.4); box-sizing: border-box; }
   .card h2 { font-family: var(--font-display); font-weight: 400; font-size: 30px; margin: 0 0 8px; line-height: 1; }
   .card p { margin: 6px 0 12px; font-weight: 600; font-size: 14px; color: #5a6273; }
   .card input { width: 100%; box-sizing: border-box; font: 800 18px var(--font-body); padding: 12px 14px; border: 2px solid #d9d2c3; border-radius: 12px; background: #fff; color: var(--ink); }
@@ -39,7 +39,7 @@
   td.s { text-align: right; font-family: var(--font-display); font-size: 18px; color: #1f5a46; }
   td.t { text-align: right; color: #8a8f99; font-size: 12px; width: 44px; }
   tr.me td { background: #fff3c4; }
-  .levels { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 8px; max-height: 190px; overflow-y: auto; padding: 2px; }
+  .levels { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 8px; max-height: 150px; overflow-y: auto; padding: 2px; }
   .levels button { border: 0; border-radius: 10px; padding: 8px 2px 6px; background: #e9e3d6; color: #5a6273; cursor: pointer; font: 800 9px var(--font-body); line-height: 1.2; }
   .levels button b { display: block; font-family: var(--font-display); font-weight: 400; font-size: 18px; color: var(--ink); }
   .levels button[aria-selected="true"] { background: var(--sel); color: var(--ink); }
@@ -72,8 +72,10 @@
     <div class="levels" id="levels" role="listbox" aria-label="Level"></div>
     <div style="font-size:10px;letter-spacing:1.5px;font-weight:800;color:#8a8f99;margin-top:12px">WHO'S PLAYING</div>
     <div class="players" id="players"></div>
-    <button class="btn" type="button" id="homePlay">PLAY</button>
-    <button class="btn quiet" type="button" id="homeBoard">Leaderboard</button>
+    <div style="display:flex;gap:8px">
+      <button class="btn" type="button" id="homePlay" style="flex:1.4">PLAY</button>
+      <button class="btn quiet" type="button" id="homeBoard" style="flex:1;margin-top:14px">LEADERBOARD</button>
+    </div>
     <p class="sub" style="margin:12px 0 0">Tap a free tile to bank it, tap its match to clear both. Four in the bank with no match and you're out.</p>
   </div>
 </div>
@@ -170,8 +172,8 @@
     'Terrace':   () => { const p = block(0, 0, 5, 4, 0, []); block(1, 1, 3, 2, 1, p); return p; },               // 26
     'Towers':    () => { const p = []; block(0, 0, 2, 5, 0, p); block(6, 0, 2, 5, 0, p); block(4, 4, 1, 2, 0, p); block(1, 2, 1, 3, 1, p); block(7, 2, 1, 3, 1, p); return p; }, // 28
     'Turtle':    () => { const p = []; [[1, 3], [0, 4], [0, 4], [0, 4], [1, 3]].forEach(([a, b], r) => { for (let c = a; c <= b; c++) p.push({ x: c * 2, y: r * 2, z: 0 }); }); block(2, 2, 3, 3, 1, p); block(3, 4, 2, 1, 2, p); return p; }, // 32
-    'Cross':     () => { const p = []; block(4, 0, 2, 6, 0, p); block(0, 4, 2, 2, 0, p); block(8, 4, 2, 2, 0, p); block(2, 2, 1, 4, 0, p); block(7, 2, 1, 4, 0, p); block(4, 2, 2, 2, 1, p); return p; }, // 36
-    'Bridge':    () => { const p = []; block(0, 0, 2, 6, 0, p); block(8, 0, 2, 6, 0, p); block(4, 2, 2, 4, 0, p); block(2, 4, 2, 2, 0, p); block(6, 4, 2, 2, 0, p); block(1, 2, 1, 2, 1, p); block(9, 2, 1, 2, 1, p); block(5, 3, 1, 2, 1, p); return p; }, // 46
+    'Cross':     () => { const p = []; block(4, 0, 2, 6, 0, p); block(0, 4, 2, 2, 0, p); block(8, 4, 2, 2, 0, p); block(4, 2, 2, 2, 1, p); block(4, 6, 2, 2, 1, p); block(5, 4, 1, 2, 2, p); return p; }, // 34
+    'Bridge':    () => { const p = []; block(0, 0, 2, 6, 0, p); block(8, 0, 2, 6, 0, p); block(4, 2, 2, 4, 0, p); block(0, 2, 1, 4, 1, p); block(10, 2, 1, 4, 1, p); block(4, 4, 2, 2, 1, p); return p; }, // 44
     'Fortress':  () => { const p = block(0, 0, 5, 6, 0, []); block(0, 0, 1, 1, 1, p); block(8, 0, 1, 1, 1, p); block(0, 10, 1, 1, 1, p); block(8, 10, 1, 1, 1, p); block(2, 2, 3, 4, 1, p); block(3, 4, 2, 2, 2, p); return p; }, // 50
     'Big Turtle':() => { const p = []; [[1, 4], [0, 5], [0, 5], [0, 5], [0, 5], [1, 4]].forEach(([a, b], r) => { for (let c = a; c <= b; c++) p.push({ x: c * 2, y: r * 2, z: 0 }); }); block(2, 2, 4, 4, 1, p); block(3, 3, 3, 2, 2, p); block(4, 4, 2, 1, 3, p); return p; }, // 56
     'Pyramid':   () => { const p = block(0, 0, 5, 6, 0, []); block(1, 1, 4, 5, 1, p); block(2, 2, 3, 4, 2, p); block(3, 3, 2, 3, 3, p); return p; }, // 68
@@ -196,7 +198,7 @@
         z++; const shrink = r() < 0.5 ? 1 : 0; x0 += shrink; x1 -= shrink; y0 += 1 - shrink; y1 -= 1 - shrink;
         if (x1 - x0 < 1 || y1 - y0 < 1) break;
         const keep = Math.min(1, (target - p.length) / ((x1 - x0 + 1) * (y1 - y0 + 1)) + 0.15);
-        for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (r() < keep) p.push({ x: x * 2, y: y * 2, z });
+        for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (r() < keep && p.some(q => q.z === z - 1 && Math.abs(q.x - x * 2) < 2 && Math.abs(q.y - y * 2) < 2)) p.push({ x: x * 2, y: y * 2, z });
       }
       if (p.length % 2) p.pop();
       if (Math.abs(p.length - target) <= 6 && p.length >= 40) return p;
