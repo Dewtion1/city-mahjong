@@ -139,7 +139,7 @@
   let PLAYERS = [];
   async function loadPlayers() {
     try {
-      const res = await fetch(SUPA_URL + '/rest/v1/city_mahjong_players?select=id,name,photo,device_id&order=name.asc', { headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY } });
+      const res = await fetch(SUPA_URL + '/rest/v1/city_mahjong_players?select=id,name,photo,device_id,unlocked&order=name.asc', { headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY } });
       if (!res.ok) return false;
       PLAYERS = (await res.json()).filter(p => p.name);
       const seen = new Set(FACES); const withPhoto = PLAYERS.filter(p => p.photo && /^data:image\//.test(p.photo) && !seen.has(p.photo) && (seen.add(p.photo), true));
@@ -150,8 +150,11 @@
     } catch (e) { return false; }
   }
   function deviceId() { try { let d = localStorage.getItem('cm_device'); if (!d) { d = 'd' + Math.random().toString(36).slice(2) + Date.now().toString(36); localStorage.setItem('cm_device', d); } return d; } catch (e) { return 'danon'; } }
+  let playerId = null; try { playerId = Number(localStorage.getItem('cm_pid')) || null; } catch (e) {}
+  async function saveProgress() { if (!playerId) return; try { await fetch(SUPA_URL + '/rest/v1/city_mahjong_players?id=eq.' + playerId, { method: 'PATCH', headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY, 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify({ unlocked }) }); } catch (e) {} }
+  function choosePlayer(p) { playerName = p.name; playerId = p.id; unlocked = Math.max(1, Math.min(NAMES.length, p.unlocked || 1)); if (levelOf(layoutName) > unlocked) layoutName = NAMES[unlocked - 1]; try { localStorage.setItem('cm_name', playerName); localStorage.setItem('cm_pid', playerId); localStorage.setItem('cm_unlocked', unlocked); } catch (e) {} }
   async function savePlayer(name, photo) {
-    const body = { name, photo: photo || null, device_id: deviceId() };
+    const body = { name, photo: photo || null, device_id: deviceId(), unlocked };
     const res = await fetch(SUPA_URL + '/rest/v1/city_mahjong_players?on_conflict=device_id,name', { method: 'POST', headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(body) });
     if (!res.ok) throw new Error('save');
   }
@@ -202,6 +205,7 @@
       }
       if (p.length % 2) p.pop();
       if (Math.abs(p.length - target) <= 6 && p.length >= 40) return p;
+      if (attempt >= 40 && p.length >= target - 14 && p.length >= 40) return p;
     }
     const p = block(0, 0, 6, 6, 0, []); block(1, 1, 4, 4, 1, p); block(1, 2, 4, 2, 2, p); block(2, 2, 2, 2, 3, p); block(2, 2, 2, 1, 4, p); return p; // 90
   }
@@ -267,22 +271,32 @@
     if (!S.alive.size && !S.bank.length) {
       S.running = false; S.over = true;
       const p = par(), t = S.t; S.timeBonus = Math.round(Math.max(0, (p - t) / p) * 400 * level()); S.score += S.timeBonus;
-      buzz([20, 30, 20, 30, 40]); for (let n = 0; n < 6; n++) burst(40 + Math.random() * (W - 80), 120 + Math.random() * 360, [C.cash, C.sel, C.accent, '#5ea9d8'][n % 4]);
-      if (level() >= unlocked && unlocked < NAMES.length) { unlocked = level() + 1; S.unlockedNew = true; try { localStorage.setItem('cm_unlocked', unlocked); } catch (e) {} }
+      buzz([20, 30, 20, 30, 40]); SFX.win(); for (let n = 0; n < 6; n++) burst(40 + Math.random() * (W - 80), 120 + Math.random() * 360, [C.cash, C.sel, C.accent, '#5ea9d8'][n % 4]);
+      if (level() >= unlocked && unlocked < NAMES.length) { unlocked = level() + 1; S.unlockedNew = true; try { localStorage.setItem('cm_unlocked', unlocked); } catch (e) {} saveProgress(); }
       finish();
     }
-    else if (!moves().length) toast('no moves: shuffle', C.sel);
+    else if (!moves().length) toast('no moves: free shuffle', C.sel);
   }
   function snapshot() { S.history.push({ alive: [...S.alive], bank: [...S.bank], score: S.score, streak: S.streak, last: S.last, kinds: Object.assign({}, S.kinds) }); if (S.history.length > 30) S.history.shift(); }
   function pick(i) {
     if (!S.running) { if (!S.over) S.running = true; else return; }
-    if (!isFree(i)) { toast('blocked', C.accent); S.shake = { i, t: 0.3 }; buzz(30); return; }
+    if (!isFree(i)) { toast('blocked', C.accent); S.shake = { i, t: 0.3 }; buzz(30); SFX.blocked(); return; }
     const b = S.bank.findIndex(k => S.kinds[k] === S.kinds[i]);
     snapshot();
-    if (b >= 0) { startMatchAnim(i, b); buzz(12); S.bank.splice(b, 1); S.alive.delete(i); clearPair(); return; }
-    S.alive.delete(i); S.bank.push(i);
-    if (S.bank.length >= BANK) { S.running = false; S.over = true; S.lost = true; buzz([60, 40, 60]); finish(); }
+    if (b >= 0) { startMatchAnim(i, b); buzz(12); SFX.match(Math.min(5, S.streak)); S.bank.splice(b, 1); S.alive.delete(i); clearPair(); return; }
+    S.alive.delete(i); S.bank.push(i); SFX.bank();
+    if (S.bank.length >= BANK) { S.running = false; S.over = true; S.lost = true; buzz([60, 40, 60]); SFX.lose(); finish(); }
   }
+  let AC = null;
+  function ac() { if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} } if (AC && AC.state === 'suspended') AC.resume(); return AC; }
+  function tone(f, dur, type, vol, when) { const a = ac(); if (!a) return; const o = a.createOscillator(), g = a.createGain(); o.type = type || 'sine'; o.frequency.value = f; const t = a.currentTime + (when || 0); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol || 0.2, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + dur); o.connect(g).connect(a.destination); o.start(t); o.stop(t + dur + 0.02); }
+  const SFX = {
+    bank: () => tone(520, 0.06, 'triangle', 0.12),
+    match: n => { tone(660 + n * 60, 0.09, 'triangle', 0.18); tone(990 + n * 60, 0.12, 'sine', 0.12, 0.05); },
+    blocked: () => tone(160, 0.12, 'square', 0.08),
+    win: () => [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.25, 'triangle', 0.18, i * 0.11)),
+    lose: () => [330, 262, 196].forEach((f, i) => tone(f, 0.3, 'sawtooth', 0.1, i * 0.16))
+  };
   function buzz(p) { try { if (navigator.vibrate) navigator.vibrate(p); } catch (e) {} }
   function doUndo() {
     if (!S.running || !S.history.length) return;
@@ -309,14 +323,14 @@
   }
   function doHint() { const p = moves(); if (!p.length) { toast('no moves: shuffle', C.sel); return; } S.hint = p[0]; S.hintT = 1.6; S.hints++; S.streak = 0; S.score = Math.max(0, S.score - 10 * level()); if (!S.running && !S.over) S.running = true; }
   function doShuffle() {
-    const slots = [...S.alive]; if (slots.length < 1 || !S.running) return; snapshot();
+    const slots = [...S.alive]; if (slots.length < 1 || !S.running) return; const stuck = !moves().length; snapshot();
     const r = rng(dailySeed + 1000 * (S.shuffles + 1));
     for (let t = 0; t < 60; t++) {
       const ks = slots.map(i => S.kinds[i]); for (let i = ks.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [ks[i], ks[j]] = [ks[j], ks[i]]; }
       slots.forEach((i, n) => S.kinds[i] = ks[n]);
       if (moves().length) break;
     }
-    S.hint = null; S.shuffles++; S.streak = 0; S.score = Math.max(0, S.score - 30 * level()); toast('shuffled', C.paper);
+    S.hint = null; S.shuffles++; S.streak = 0; if (stuck) toast('free shuffle', C.cash); else { S.score = Math.max(0, S.score - 30 * level()); toast('shuffled', C.paper); }
   }
 
   // --- Leaderboard (Supabase REST) ---
@@ -365,8 +379,7 @@
     const btn = document.getElementById('nameSave'); btn.disabled = true; btn.textContent = 'Saving\u2026';
     try { await savePlayer(name, pendingPhoto); } catch (x) {}
     btn.disabled = false; btn.textContent = 'Save';
-    playerName = name; try { localStorage.setItem('cm_name', playerName); } catch (x) {}
-    nameSheet.hidden = true; await loadPlayers(); if (!S.running) reset(); syncHome();
+    nameSheet.hidden = true; await loadPlayers(); const mine = PLAYERS.find(p => p.name === name && p.device_id === deviceId()) || PLAYERS.find(p => p.name === name); if (mine) choosePlayer(mine); else playerName = name; if (!S.running) reset(); syncHome();
   });
   const winSheet = document.getElementById('winSheet');
   async function finish() {
@@ -389,7 +402,7 @@
     levelsEl.innerHTML = '';
     NAMES.forEach((n, i) => { const b = document.createElement('button'); b.type = 'button'; b.setAttribute('role', 'option'); b.setAttribute('aria-selected', n === layoutName); b.disabled = i >= unlocked; b.innerHTML = '<b>' + (i + 1) + '</b>' + (i >= unlocked ? '\uD83D\uDD12' : LAYOUTS[n]().length + ' tiles'); b.title = n; b.addEventListener('click', () => { if (i < unlocked) { reset(n); syncHome(); } }); levelsEl.appendChild(b); });
     const strip = document.getElementById('players'); strip.innerHTML = '';
-    for (const p of PLAYERS) { const b = document.createElement('button'); b.type = 'button'; b.setAttribute('aria-selected', p.name === playerName); const av = document.createElement('div'); av.className = 'av'; if (p.photo) av.style.backgroundImage = `url(${p.photo})`; else av.textContent = p.name[0].toUpperCase(); const sp = document.createElement('span'); sp.textContent = p.name; b.append(av, sp); b.addEventListener('click', () => { if (playerName === p.name) askName(p); else { playerName = p.name; try { localStorage.setItem('cm_name', playerName); } catch (x) {} syncHome(); } }); strip.appendChild(b); }
+    for (const p of PLAYERS) { const b = document.createElement('button'); b.type = 'button'; b.setAttribute('aria-selected', p.name === playerName); const av = document.createElement('div'); av.className = 'av'; if (p.photo) av.style.backgroundImage = `url(${p.photo})`; else av.textContent = p.name[0].toUpperCase(); const sp = document.createElement('span'); sp.textContent = p.name; b.append(av, sp); b.addEventListener('click', () => { if (playerName === p.name) askName(p); else { choosePlayer(p); reset(); syncHome(); } }); strip.appendChild(b); }
     const add = document.createElement('button'); add.type = 'button'; add.className = 'add'; add.innerHTML = '<div class="av">+</div><span>Add</span>'; add.addEventListener('click', () => askName(null)); strip.appendChild(add);
     document.getElementById('homeDay').textContent = 'Level ' + levelOf(layoutName) + ' \u00b7 ' + layoutName + ' \u00b7 ' + LAYOUTS[layoutName]().length + ' tiles. Same board for everyone today.';
   }
@@ -402,6 +415,7 @@
   // --- Input ---
   const CHIPS = ['Home', 'Hint', 'Undo', 'Shuffle']; const CHIP_X = 180; const chipW = (W - CHIP_X - 8) / CHIPS.length;
   canvas.addEventListener('pointerup', e => {
+    ac();
     const rect = canvas.getBoundingClientRect(), sx = (e.clientX - rect.left) * W / rect.width, sy = (e.clientY - rect.top) * H / rect.height;
     if (S.over) return;
     if (sy > 8 && sy < 52 && sx > CHIP_X) {
@@ -482,7 +496,7 @@
   function frame(now) { const dt = Math.min(0.1, (now - last) / 1000); last = now; if (S.running) S.t += dt; if (S.toastT > 0) S.toastT -= dt; if (S.hintT > 0) S.hintT -= dt; if (S.shake) S.shake.t -= dt; stepFx(dt); render(); requestAnimationFrame(frame); }
   reset(); requestAnimationFrame(frame); syncHome();
   // Re-deal once the uploaded faces arrive, as long as nobody has started playing yet.
-  loadPlayers().then(() => { if (!S.running && !S.over && S.bank.length === 0) reset(); syncHome(); });
+  loadPlayers().then(() => { const me = PLAYERS.find(p => p.id === playerId); if (me) { if ((me.unlocked || 1) < unlocked) saveProgress(); else choosePlayer(me); } if (!S.running && !S.over && S.bank.length === 0) reset(); syncHome(); });
 })();
 </script>
 </body>
