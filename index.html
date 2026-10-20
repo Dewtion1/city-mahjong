@@ -39,13 +39,25 @@
   td.s { text-align: right; font-family: var(--font-display); font-size: 18px; color: #1f5a46; }
   td.t { text-align: right; color: #8a8f99; font-size: 12px; width: 44px; }
   tr.me td { background: #fff3c4; }
-  .levels { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 8px; }
+  .levels { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 8px; max-height: 190px; overflow-y: auto; padding: 2px; }
   .levels button { border: 0; border-radius: 10px; padding: 8px 2px 6px; background: #e9e3d6; color: #5a6273; cursor: pointer; font: 800 9px var(--font-body); line-height: 1.2; }
   .levels button b { display: block; font-family: var(--font-display); font-weight: 400; font-size: 18px; color: var(--ink); }
   .levels button[aria-selected="true"] { background: var(--sel); color: var(--ink); }
   .levels button[aria-selected="true"] b { color: var(--ink); }
   .levels button:disabled { opacity: .4; cursor: default; }
   .levels button:focus-visible { outline: 3px solid var(--ink); outline-offset: 1px; }
+  .players { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 10px 0 2px; }
+  .players button { border: 0; background: none; padding: 0; cursor: pointer; width: 58px; display: flex; flex-direction: column; align-items: center; gap: 3px; font: 800 9px var(--font-body); color: #5a6273; }
+  .players .av { width: 44px; height: 44px; border-radius: 50%; background: #e9e3d6 center/cover no-repeat; border: 3px solid transparent; display: grid; place-items: center; font-family: var(--font-display); font-size: 18px; color: #8a7352; }
+  .players button[aria-selected="true"] .av { border-color: var(--accent); }
+  .players button[aria-selected="true"] { color: var(--ink); }
+  .players button span { max-width: 58px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .players .add .av { border: 2px dashed #b9b2a6; color: #8a8f99; font-size: 24px; }
+  .players button:focus-visible .av { outline: 3px solid var(--ink); outline-offset: 1px; }
+  .file { display: block; margin-top: 10px; }
+  .file input { position: absolute; left: -9999px; }
+  .file .prev { width: 96px; height: 96px; border-radius: 50%; margin: 0 auto 8px; background: #e9e3d6 center/cover no-repeat; display: grid; place-items: center; font-family: var(--font-display); font-size: 36px; color: #8a7352; }
+  .file .pick { display: block; text-align: center; font: 800 13px var(--font-body); color: var(--accent); cursor: pointer; }
   .empty { text-align: center; color: #8a8f99; padding: 18px 0; font-weight: 700; }
 </style>
 </head>
@@ -58,20 +70,23 @@
     <h2 style="font-size:40px;margin:4px 0 2px">City Mahjong</h2>
     <p id="homeDay">Same board for everyone today.</p>
     <div class="levels" id="levels" role="listbox" aria-label="Level"></div>
+    <div style="font-size:10px;letter-spacing:1.5px;font-weight:800;color:#8a8f99;margin-top:12px">WHO'S PLAYING</div>
+    <div class="players" id="players"></div>
     <button class="btn" type="button" id="homePlay">PLAY</button>
     <button class="btn quiet" type="button" id="homeBoard">Leaderboard</button>
-    <button class="btn quiet" type="button" id="homeName">Playing as: <span id="homeWho">?</span></button>
     <p class="sub" style="margin:12px 0 0">Tap a free tile to bank it, tap its match to clear both. Four in the bank with no match and you're out.</p>
   </div>
 </div>
 
 <div class="sheet" id="nameSheet" hidden>
   <form class="card" id="nameForm">
-    <h2>Who's playing?</h2>
-    <p>Your name goes on the family leaderboard.</p>
+    <h2 id="nameTitle">New player</h2>
+    <p>Your name goes on the leaderboard and your photo becomes a tile.</p>
+    <label class="file"><input type="file" id="photoInput" accept="image/*"><div class="prev" id="photoPrev">+</div><span class="pick" id="photoPick">Choose a photo</span></label>
     <label for="nameInput" style="position:absolute;left:-9999px">Name</label>
-    <input id="nameInput" maxlength="20" autocomplete="nickname" placeholder="Your name" required>
-    <button class="btn" type="submit">Let's go</button>
+    <input id="nameInput" maxlength="20" autocomplete="nickname" placeholder="Your name" required style="margin-top:10px">
+    <button class="btn" type="submit" id="nameSave">Save</button>
+    <button class="btn quiet" type="button" id="nameCancel">Cancel</button>
   </form>
 </div>
 
@@ -118,19 +133,33 @@
   const faceImgs = FACES.map(src => { const im = new Image(); im.src = src; return im; });
   const FACE_NAMES = ['', '', '', '', '', '', 'Iain'];
   faceImgs.forEach((im, i) => KINDS.push({ suit: 'face', n: i, who: FACE_NAMES[i] || 'Family ' + (i + 1) }));
-  // Photos people uploaded in Stair Cleaning live with their scores; pull them in as extra face tiles.
-  async function loadUploadedFaces() {
+  // Players (name + photo) live in city_mahjong_players; every player with a photo becomes a face tile.
+  let PLAYERS = [];
+  async function loadPlayers() {
     try {
-      const res = await fetch('https://zmxkxxlvaewwwqgrphlk.supabase.co/rest/v1/stair_cleaning_scores?select=player,photo,device_id,updated_at&photo=not.is.null&face=eq.-1&order=updated_at.desc&limit=300', { headers: { apikey: 'sb_publishable_Opzos_yWd8FFPS1nATl5_Q_NZZay9fm', Authorization: 'Bearer sb_publishable_Opzos_yWd8FFPS1nATl5_Q_NZZay9fm' } });
-      if (!res.ok) return 0;
-      const rows = await res.json(); const latest = {};
-      const seenPhoto = new Set(FACES);
-      for (const r of rows) { if (!r.photo || !/^data:image\//.test(r.photo) || r.photo.length > 60000 || seenPhoto.has(r.photo)) continue; const k = (r.device_id || '') + '|' + String(r.player || '').trim().toLowerCase(); if (!latest[k]) { latest[k] = r; seenPhoto.add(r.photo); } }
-      const extra = Object.values(latest).sort((a, b) => a.player.localeCompare(b.player)).slice(0, 9);
-      const loaded = await Promise.all(extra.map(r => new Promise(res => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = r.photo; })));
-      loaded.forEach((im, i) => { if (im && im.naturalWidth) { faceImgs.push(im); KINDS.push({ suit: 'face', n: faceImgs.length - 1, who: extra[i].player }); } });
-      return loaded.filter(Boolean).length;
-    } catch (e) { return 0; }
+      const res = await fetch(SUPA_URL + '/rest/v1/city_mahjong_players?select=id,name,photo,device_id&order=name.asc', { headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY } });
+      if (!res.ok) return false;
+      PLAYERS = (await res.json()).filter(p => p.name);
+      const seen = new Set(FACES); const withPhoto = PLAYERS.filter(p => p.photo && /^data:image\//.test(p.photo) && !seen.has(p.photo) && (seen.add(p.photo), true));
+      const loaded = await Promise.all(withPhoto.map(p => new Promise(res => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = p.photo; })));
+      faceImgs.length = FACES.length; KINDS.length = 27 + FACES.length;
+      loaded.forEach((im, i) => { if (im && im.naturalWidth) { faceImgs.push(im); KINDS.push({ suit: 'face', n: faceImgs.length - 1, who: withPhoto[i].name }); } });
+      return true;
+    } catch (e) { return false; }
+  }
+  function deviceId() { try { let d = localStorage.getItem('cm_device'); if (!d) { d = 'd' + Math.random().toString(36).slice(2) + Date.now().toString(36); localStorage.setItem('cm_device', d); } return d; } catch (e) { return 'danon'; } }
+  async function savePlayer(name, photo) {
+    const body = { name, photo: photo || null, device_id: deviceId() };
+    const res = await fetch(SUPA_URL + '/rest/v1/city_mahjong_players?on_conflict=device_id,name', { method: 'POST', headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(body) });
+    if (!res.ok) throw new Error('save');
+  }
+  // Shrink a chosen photo to a small square data URL so it fits a tile and the table.
+  function shrinkPhoto(file) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file); const im = new Image();
+      im.onload = () => { const c = document.createElement('canvas'); c.width = 96; c.height = 128; const g = c.getContext('2d'); const s = Math.max(96 / im.width, 128 / im.height); g.drawImage(im, (96 - im.width * s) / 2, (128 - im.height * s) / 2, im.width * s, im.height * s); URL.revokeObjectURL(url); let q = 0.7, out = c.toDataURL('image/jpeg', q); while (out.length > 38000 && q > 0.3) { q -= 0.1; out = c.toDataURL('image/jpeg', q); } resolve(out); };
+      im.onerror = () => { URL.revokeObjectURL(url); reject(new Error('image')); }; im.src = url;
+    });
   }
 
   // --- Layouts: half-tile units, a tile is 2 by 2. ---
@@ -146,8 +175,35 @@
     'Fortress':  () => { const p = block(0, 0, 5, 6, 0, []); block(0, 0, 1, 1, 1, p); block(8, 0, 1, 1, 1, p); block(0, 10, 1, 1, 1, p); block(8, 10, 1, 1, 1, p); block(2, 2, 3, 4, 1, p); block(3, 4, 2, 2, 2, p); return p; }, // 50
     'Big Turtle':() => { const p = []; [[1, 4], [0, 5], [0, 5], [0, 5], [0, 5], [1, 4]].forEach(([a, b], r) => { for (let c = a; c <= b; c++) p.push({ x: c * 2, y: r * 2, z: 0 }); }); block(2, 2, 4, 4, 1, p); block(3, 3, 3, 2, 2, p); block(4, 4, 2, 1, 3, p); return p; }, // 56
     'Pyramid':   () => { const p = block(0, 0, 5, 6, 0, []); block(1, 1, 4, 5, 1, p); block(2, 2, 3, 4, 2, p); block(3, 3, 2, 3, 3, p); return p; }, // 68
-    'The City':  () => { const p = block(0, 0, 6, 6, 0, []); block(1, 1, 5, 5, 1, p); block(2, 2, 4, 4, 2, p); block(3, 3, 3, 3, 3, p); block(4, 4, 2, 2, 4, p); return p; } // 90
+    'The City':  () => { const p = block(0, 0, 6, 5, 0, []); block(1, 1, 4, 3, 1, p); block(2, 2, 2, 1, 2, p); return p; } // 44
   };
+  // Levels 11-50 are generated: a seeded silhouette on a 6x6 footprint, tile count and layers rising with the level.
+  // Tile width stays >= 46px because the footprint never exceeds 6 wide.
+  const STREETS = ['Oxford St', 'Baker St', 'Fleet St', 'The Strand', 'Bond St', 'Carnaby St', 'Brick Lane', 'Portobello', 'Abbey Road', 'Camden', 'Soho', 'Mayfair', 'Chelsea', 'Shoreditch', 'Greenwich', 'Hampstead', 'Kensington', 'Notting Hill', 'Islington', 'Brixton', 'Clapham', 'Hackney', 'Peckham', 'Richmond', 'Wimbledon', 'Fulham', 'Putney', 'Battersea', 'Bermondsey', 'Whitechapel', 'Holborn', 'Pimlico', 'Belgravia', 'Marylebone', 'Bloomsbury', 'Covent Garden', 'Southwark', 'Lambeth', 'Dalston', 'Walthamstow'];
+  function genLayout(level) {
+    const r = rng(777 + level * 131);
+    const target = Math.min(96, 44 + Math.round((level - 10) * 1.3)); // 45 -> 96 tiles
+    const cols = 6, rows = 6;
+    for (let attempt = 0; attempt < 60; attempt++) {
+      const p = []; const on = [];
+      for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) on.push(true);
+      const holes = level < 25 ? 2 + Math.floor(r() * 4) : Math.floor(r() * 3); // fewer holes as levels rise
+      for (let h = 0; h < holes; h++) { const x = Math.floor(r() * 3), y = Math.floor(r() * rows); on[y * cols + x] = false; on[y * cols + (cols - 1 - x)] = false; }
+      for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) if (on[y * cols + x]) p.push({ x: x * 2, y: y * 2, z: 0 });
+      // stack layers until the target is reached; higher layers sit inside the one below
+      let x0 = 0, y0 = 0, x1 = cols - 1, y1 = rows - 1, z = 0;
+      while (p.length < target && z < 5) {
+        z++; const shrink = r() < 0.5 ? 1 : 0; x0 += shrink; x1 -= shrink; y0 += 1 - shrink; y1 -= 1 - shrink;
+        if (x1 - x0 < 1 || y1 - y0 < 1) break;
+        const keep = Math.min(1, (target - p.length) / ((x1 - x0 + 1) * (y1 - y0 + 1)) + 0.15);
+        for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (r() < keep) p.push({ x: x * 2, y: y * 2, z });
+      }
+      if (p.length % 2) p.pop();
+      if (Math.abs(p.length - target) <= 6 && p.length >= 40) return p;
+    }
+    const p = block(0, 0, 6, 6, 0, []); block(1, 1, 4, 4, 1, p); block(1, 2, 4, 2, 2, p); block(2, 2, 2, 2, 3, p); block(2, 2, 2, 1, 4, p); return p; // 90
+  }
+  for (let L = 11; L <= 50; L++) { const name = STREETS[(L - 11) % STREETS.length]; LAYOUTS[name] = (lv => () => genLayout(lv))(L); }
   const NAMES = Object.keys(LAYOUTS);
 
   const BANK = 4, BANK_Y = 548, BTW = 40, BTH = 54, OY_TOP = 104;
@@ -262,9 +318,24 @@
   document.getElementById('boardClose').addEventListener('click', () => { boardSheet.hidden = true; });
 
   // --- Name and win sheets ---
-  const nameSheet = document.getElementById('nameSheet'), nameInput = document.getElementById('nameInput');
-  function askName() { nameSheet.hidden = false; nameInput.value = playerName; setTimeout(() => nameInput.focus(), 50); }
-  document.getElementById('nameForm').addEventListener('submit', e => { e.preventDefault(); playerName = nameInput.value.trim().slice(0, 20); if (!playerName) return; try { localStorage.setItem('cm_name', playerName); } catch (x) {} nameSheet.hidden = true; syncHome(); });
+  const nameSheet = document.getElementById('nameSheet'), nameInput = document.getElementById('nameInput'), photoInput = document.getElementById('photoInput'), photoPrev = document.getElementById('photoPrev');
+  let pendingPhoto = null;
+  function askName(existing) {
+    pendingPhoto = existing && existing.photo || null; nameInput.value = existing ? existing.name : '';
+    document.getElementById('nameTitle').textContent = existing ? 'Edit player' : 'New player';
+    photoPrev.style.backgroundImage = pendingPhoto ? `url(${pendingPhoto})` : ''; photoPrev.textContent = pendingPhoto ? '' : '+';
+    nameSheet.hidden = false; setTimeout(() => nameInput.focus(), 50);
+  }
+  photoInput.addEventListener('change', async () => { const f = photoInput.files && photoInput.files[0]; if (!f) return; try { pendingPhoto = await shrinkPhoto(f); photoPrev.style.backgroundImage = `url(${pendingPhoto})`; photoPrev.textContent = ''; } catch (e) { photoPrev.textContent = '!'; } });
+  document.getElementById('nameCancel').addEventListener('click', () => { nameSheet.hidden = true; });
+  document.getElementById('nameForm').addEventListener('submit', async e => {
+    e.preventDefault(); const name = nameInput.value.trim().slice(0, 20); if (!name) return;
+    const btn = document.getElementById('nameSave'); btn.disabled = true; btn.textContent = 'Saving\u2026';
+    try { await savePlayer(name, pendingPhoto); } catch (x) {}
+    btn.disabled = false; btn.textContent = 'Save';
+    playerName = name; try { localStorage.setItem('cm_name', playerName); } catch (x) {}
+    nameSheet.hidden = true; await loadPlayers(); if (!S.running) reset(); syncHome();
+  });
   const winSheet = document.getElementById('winSheet');
   async function finish() {
     if (S.lost) {
@@ -285,13 +356,14 @@
   function syncHome() {
     levelsEl.innerHTML = '';
     NAMES.forEach((n, i) => { const b = document.createElement('button'); b.type = 'button'; b.setAttribute('role', 'option'); b.setAttribute('aria-selected', n === layoutName); b.disabled = i >= unlocked; b.innerHTML = '<b>' + (i + 1) + '</b>' + (i >= unlocked ? '\uD83D\uDD12' : LAYOUTS[n]().length + ' tiles'); b.title = n; b.addEventListener('click', () => { if (i < unlocked) { reset(n); syncHome(); } }); levelsEl.appendChild(b); });
-    document.getElementById('homeWho').textContent = playerName || 'tap to set';
+    const strip = document.getElementById('players'); strip.innerHTML = '';
+    for (const p of PLAYERS) { const b = document.createElement('button'); b.type = 'button'; b.setAttribute('aria-selected', p.name === playerName); const av = document.createElement('div'); av.className = 'av'; if (p.photo) av.style.backgroundImage = `url(${p.photo})`; else av.textContent = p.name[0].toUpperCase(); const sp = document.createElement('span'); sp.textContent = p.name; b.append(av, sp); b.addEventListener('click', () => { if (playerName === p.name) askName(p); else { playerName = p.name; try { localStorage.setItem('cm_name', playerName); } catch (x) {} syncHome(); } }); strip.appendChild(b); }
+    const add = document.createElement('button'); add.type = 'button'; add.className = 'add'; add.innerHTML = '<div class="av">+</div><span>Add</span>'; add.addEventListener('click', () => askName(null)); strip.appendChild(add);
     document.getElementById('homeDay').textContent = 'Level ' + levelOf(layoutName) + ' \u00b7 ' + layoutName + ' \u00b7 ' + LAYOUTS[layoutName]().length + ' tiles. Same board for everyone today.';
   }
   function goHome() { winSheet.hidden = true; boardSheet.hidden = true; reset(); syncHome(); homeSheet.hidden = false; }
-  document.getElementById('homePlay').addEventListener('click', () => { if (!playerName) { askName(); return; } homeSheet.hidden = true; });
+  document.getElementById('homePlay').addEventListener('click', () => { if (!playerName) { askName(null); return; } homeSheet.hidden = true; });
   document.getElementById('homeBoard').addEventListener('click', () => { scope = 'today'; showBoard(); });
-  document.getElementById('homeName').addEventListener('click', () => askName());
   document.getElementById('winHome').addEventListener('click', goHome);
   document.getElementById('winNext').addEventListener('click', () => { const i = levelOf(layoutName); if (i < NAMES.length && i < unlocked) { winSheet.hidden = true; reset(NAMES[i]); } else goHome(); });
 
@@ -370,7 +442,7 @@
   function frame(now) { const dt = Math.min(0.1, (now - last) / 1000); last = now; if (S.running) S.t += dt; if (S.toastT > 0) S.toastT -= dt; if (S.hintT > 0) S.hintT -= dt; render(); requestAnimationFrame(frame); }
   reset(); requestAnimationFrame(frame); syncHome();
   // Re-deal once the uploaded faces arrive, as long as nobody has started playing yet.
-  loadUploadedFaces().then(n => { if (n && !S.running && !S.over && S.bank.length === 0) reset(); });
+  loadPlayers().then(() => { if (!S.running && !S.over && S.bank.length === 0) reset(); syncHome(); });
 })();
 </script>
 </body>
