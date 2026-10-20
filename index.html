@@ -22,7 +22,7 @@
   canvas { display: block; max-width: 100%; max-height: 100%; aspect-ratio: 9 / 16; border-radius: 22px; box-shadow: 0 18px 50px rgba(0,0,0,.45); touch-action: manipulation; user-select: none; -webkit-user-select: none; background: var(--felt); }
   .sheet { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(16,24,40,.72); backdrop-filter: blur(4px); padding: 16px; z-index: 5; }
   .sheet[hidden] { display: none; }
-  .card { background: var(--paper); color: var(--ink); border-radius: 22px; padding: 22px 20px 18px; width: min(100%, 340px); max-height: calc(100vh - 32px); overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,.4); box-sizing: border-box; }
+  .card { background: var(--paper); color: var(--ink); border-radius: 22px; padding: 22px 20px 18px; width: min(100%, 340px); max-height: calc(100vh - 32px); max-height: calc(100dvh - 32px); overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,.4); box-sizing: border-box; }
   .card h2 { font-family: var(--font-display); font-weight: 400; font-size: 30px; margin: 0 0 8px; line-height: 1; }
   .card p { margin: 6px 0 12px; font-weight: 600; font-size: 14px; color: #5a6273; }
   .card input { width: 100%; box-sizing: border-box; font: 800 18px var(--font-body); padding: 12px 14px; border: 2px solid #d9d2c3; border-radius: 12px; background: #fff; color: var(--ink); }
@@ -242,7 +242,7 @@
   function dealRetry(seed, slots) { for (let t = 0; t < 80; t++) { const k = deal(seed + t * 7919, slots); if (k) return k; } return null; }
 
   // --- State ---
-  const today = new Date(); const DAY = today.getUTCFullYear() + '-' + String(today.getUTCMonth() + 1).padStart(2, '0') + '-' + String(today.getUTCDate()).padStart(2, '0');
+  const today = new Date(); const DAY = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
   const dailySeed = Number(DAY.replace(/-/g, ''));
   let S, layoutName = NAMES[0], playerName = '', unlocked = 1;
   try { playerName = localStorage.getItem('cm_name') || ''; unlocked = Math.max(1, Math.min(NAMES.length, Number(localStorage.getItem('cm_unlocked')) || 1)); const sv = localStorage.getItem('cm_layout'); layoutName = NAMES.includes(sv) && NAMES.indexOf(sv) < unlocked ? sv : NAMES[0]; } catch (e) {}
@@ -267,6 +267,7 @@
     if (!S.alive.size && !S.bank.length) {
       S.running = false; S.over = true;
       const p = par(), t = S.t; S.timeBonus = Math.round(Math.max(0, (p - t) / p) * 400 * level()); S.score += S.timeBonus;
+      buzz([20, 30, 20, 30, 40]); for (let n = 0; n < 6; n++) burst(40 + Math.random() * (W - 80), 120 + Math.random() * 360, [C.cash, C.sel, C.accent, '#5ea9d8'][n % 4]);
       if (level() >= unlocked && unlocked < NAMES.length) { unlocked = level() + 1; S.unlockedNew = true; try { localStorage.setItem('cm_unlocked', unlocked); } catch (e) {} }
       finish();
     }
@@ -275,13 +276,14 @@
   function snapshot() { S.history.push({ alive: [...S.alive], bank: [...S.bank], score: S.score, streak: S.streak, last: S.last, kinds: Object.assign({}, S.kinds) }); if (S.history.length > 30) S.history.shift(); }
   function pick(i) {
     if (!S.running) { if (!S.over) S.running = true; else return; }
-    if (!isFree(i)) { toast('blocked', C.accent); return; }
+    if (!isFree(i)) { toast('blocked', C.accent); S.shake = { i, t: 0.3 }; buzz(30); return; }
     const b = S.bank.findIndex(k => S.kinds[k] === S.kinds[i]);
     snapshot();
-    if (b >= 0) { startMatchAnim(i, b); S.bank.splice(b, 1); S.alive.delete(i); clearPair(); return; }
+    if (b >= 0) { startMatchAnim(i, b); buzz(12); S.bank.splice(b, 1); S.alive.delete(i); clearPair(); return; }
     S.alive.delete(i); S.bank.push(i);
-    if (S.bank.length >= BANK) { S.running = false; S.over = true; S.lost = true; finish(); }
+    if (S.bank.length >= BANK) { S.running = false; S.over = true; S.lost = true; buzz([60, 40, 60]); finish(); }
   }
+  function buzz(p) { try { if (navigator.vibrate) navigator.vibrate(p); } catch (e) {} }
   function doUndo() {
     if (!S.running || !S.history.length) return;
     const h = S.history.pop(); S.alive = new Set(h.alive); S.bank = h.bank; S.kinds = h.kinds; S.streak = 0; S.last = h.last;
@@ -333,7 +335,7 @@
   const boardSheet = document.getElementById('boardSheet'), boardBody = document.getElementById('boardBody'), boardSub = document.getElementById('boardSub');
   let scope = 'total';
   async function showBoard() {
-    boardSheet.hidden = false; boardSub.textContent = (scope === 'today' ? 'Today' : scope === 'week' ? 'This week' : 'All time') + ' · ' + layoutName;
+    boardSheet.hidden = false; boardSub.textContent = scope === 'total' ? 'Best score on every level, added up' : (scope === 'today' ? 'Today' : 'All time') + ' · Level ' + levelOf(layoutName) + ' ' + layoutName;
     boardBody.innerHTML = '<div class="empty">Loading…</div>';
     try {
       const rows = await fetchBoard(scope);
@@ -374,7 +376,7 @@
       document.getElementById('winRank').textContent = 'No score this time.'; document.getElementById('winNext').hidden = true; winSheet.hidden = false; return;
     }
     document.getElementById('winTitle').textContent = S.score + ' points';
-    document.getElementById('winLine').textContent = layoutName + ' cleared in ' + Math.floor(S.t) + 's · ' + S.hints + ' hints · ' + S.shuffles + ' shuffles';
+    document.getElementById('winLine').textContent = 'Level ' + levelOf(layoutName) + ' ' + layoutName + ' cleared in ' + Math.floor(S.t) + 's (par ' + Math.round(par()) + 's) · time bonus +' + S.timeBonus + ' · ' + S.hints + ' hints, ' + S.undos + ' undos, ' + S.shuffles + ' shuffles' + (S.unlockedNew ? ' · Level ' + unlocked + ' unlocked!' : '');
     document.getElementById('winRank').textContent = ''; winSheet.hidden = false;
     await submitScore();
     try { const rows = await fetchBoard('today'); const rank = rows.findIndex(r => r.name === playerName && r.score === S.score) + 1; if (rank) document.getElementById('winRank').textContent = rank === 1 ? 'Top of today\'s board!' : '#' + rank + ' today'; } catch (e) {}
@@ -443,7 +445,7 @@
     ctx.save(); ctx.translate(x, y); ctx.scale(s, s); face(KINDS[S.kinds[i]]); ctx.restore();
     if (!free) { ctx.fillStyle = 'rgba(40,60,50,.3)'; ctx.beginPath(); ctx.roundRect(x, y, w, h, 5 * s); ctx.fill(); }
   }
-  function drawTile(i) { const [x, y] = tileXY(i); tileBody(x, y, i, S.hint && S.hint.includes(i) && S.hintT > 0, isFree(i), true, TW, TH, ZX, ZY); }
+  function drawTile(i) { let [x, y] = tileXY(i); if (S.shake && S.shake.i === i && S.shake.t > 0) x += Math.sin(S.shake.t * 60) * 4; tileBody(x, y, i, S.hint && S.hint.includes(i) && S.hintT > 0, isFree(i), true, TW, TH, ZX, ZY); }
   const bankX = slot => (W - (BANK * BTW + (BANK - 1) * 10)) / 2 + slot * (BTW + 10);
   function drawBank() {
     rr(bankX(0) - 10, BANK_Y - 8, BANK * BTW + (BANK - 1) * 10 + 20, BTH + 16, 12, 'rgba(22,26,36,.55)');
@@ -477,7 +479,7 @@
     if (S.toastT > 0) { ctx.globalAlpha = Math.min(1, S.toastT * 3); ctx.fillStyle = S.toast.color; ctx.font = `26px ${FD}`; ctx.strokeStyle = C.ink; ctx.lineWidth = 5; ctx.textAlign = 'center'; ctx.strokeText(S.toast.text, W / 2, 90 - (0.9 - S.toastT) * 20); ctx.fillText(S.toast.text, W / 2, 90 - (0.9 - S.toastT) * 20); ctx.globalAlpha = 1; }
   }
   let last = performance.now();
-  function frame(now) { const dt = Math.min(0.1, (now - last) / 1000); last = now; if (S.running) S.t += dt; if (S.toastT > 0) S.toastT -= dt; if (S.hintT > 0) S.hintT -= dt; stepFx(dt); render(); requestAnimationFrame(frame); }
+  function frame(now) { const dt = Math.min(0.1, (now - last) / 1000); last = now; if (S.running) S.t += dt; if (S.toastT > 0) S.toastT -= dt; if (S.hintT > 0) S.hintT -= dt; if (S.shake) S.shake.t -= dt; stepFx(dt); render(); requestAnimationFrame(frame); }
   reset(); requestAnimationFrame(frame); syncHome();
   // Re-deal once the uploaded faces arrive, as long as nobody has started playing yet.
   loadPlayers().then(() => { if (!S.running && !S.over && S.bank.length === 0) reset(); syncHome(); });
