@@ -227,8 +227,9 @@
     const r = rng(seed); const present = new Set(slots), kind = {};
     // Faces first (every family member on the board), then numbered suits to fill the rest; cycle if the board is bigger than the kind set.
     const shuf = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+    // One family face per game (chosen by the day and level), the rest numbered suits, so people play on to find their own photo.
     const faces = shuf(KINDS.map((k, i) => k.suit === 'face' ? i : -1).filter(i => i >= 0)), suits = shuf(KINDS.map((k, i) => k.suit !== 'face' ? i : -1).filter(i => i >= 0));
-    const order = faces.concat(suits), pairs = []; for (let i = 0; i < slots.length / 2; i++) pairs.push(order[i % order.length]);
+    const order = faces.slice(0, 1).concat(suits), pairs = []; for (let i = 0; i < slots.length / 2; i++) pairs.push(order[i % order.length]);
     shuf(pairs);
     const free = () => [...present].filter(i => !above[i].some(j => present.has(j)) && !(leftOf[i].some(j => present.has(j)) && rightOf[i].some(j => present.has(j))));
     for (const k of pairs) {
@@ -250,7 +251,7 @@
     if (name) { layoutName = name; try { localStorage.setItem('cm_layout', name); } catch (e) {} }
     setLayout(layoutName);
     const kinds = dealRetry(dailySeed + NAMES.indexOf(layoutName) * 101, POS.map((_, i) => i));
-    S = { kinds, alive: new Set(POS.map((_, i) => i)), bank: [], t: 0, running: false, over: false, score: 0, last: 0, hint: null, hintT: 0, toast: null, toastT: 0, shuffles: 0, hints: 0, submitted: false, lost: false, unlockedNew: false, streak: 0, timeBonus: 0 };
+    S = { kinds, alive: new Set(POS.map((_, i) => i)), bank: [], t: 0, running: false, over: false, score: 0, last: 0, hint: null, hintT: 0, toast: null, toastT: 0, shuffles: 0, hints: 0, submitted: false, lost: false, unlockedNew: false, streak: 0, timeBonus: 0, history: [], undos: 0, anims: [], parts: [] };
   }
   const isFree = i => S.alive.has(i) && !above[i].some(j => S.alive.has(j)) && !(leftOf[i].some(j => S.alive.has(j)) && rightOf[i].some(j => S.alive.has(j)));
   function moves() { const f = [...S.alive].filter(isFree); const out = []; for (const a of f) { const b = S.bank.find(b => S.kinds[b] === S.kinds[a]); if (b !== undefined) out.push([a, b]); } for (let a = 0; a < f.length; a++) for (let b = a + 1; b < f.length; b++) if (S.kinds[f[a]] === S.kinds[f[b]]) out.push([f[a], f[b]]); return out; }
@@ -271,18 +272,42 @@
     }
     else if (!moves().length) toast('no moves: shuffle', C.sel);
   }
+  function snapshot() { S.history.push({ alive: [...S.alive], bank: [...S.bank], score: S.score, streak: S.streak, last: S.last, kinds: Object.assign({}, S.kinds) }); if (S.history.length > 30) S.history.shift(); }
   function pick(i) {
     if (!S.running) { if (!S.over) S.running = true; else return; }
     if (!isFree(i)) { toast('blocked', C.accent); return; }
     const b = S.bank.findIndex(k => S.kinds[k] === S.kinds[i]);
-    if (b >= 0) { S.bank.splice(b, 1); S.alive.delete(i); clearPair(); return; }
-    if (S.bank.length >= BANK) { toast('bank full', C.accent); return; }
+    snapshot();
+    if (b >= 0) { startMatchAnim(i, b); S.bank.splice(b, 1); S.alive.delete(i); clearPair(); return; }
     S.alive.delete(i); S.bank.push(i);
-    if (S.bank.length >= BANK && !moves().length) { S.running = false; S.over = true; S.lost = true; finish(); }
+    if (S.bank.length >= BANK) { S.running = false; S.over = true; S.lost = true; finish(); }
+  }
+  function doUndo() {
+    if (!S.running || !S.history.length) return;
+    const h = S.history.pop(); S.alive = new Set(h.alive); S.bank = h.bank; S.kinds = h.kinds; S.streak = 0; S.last = h.last;
+    S.score = Math.max(0, h.score - 20 * level()); S.undos++; S.hint = null; S.anims = []; toast('undo  \u2212' + 20 * level(), C.sel);
+  }
+  // Match animation: both tiles fly to a midpoint and burst into particles in the suit colour.
+  function kindColor(k) { return k.suit === 'bus' ? '#d12b2b' : k.suit === 'cab' ? '#1f232c' : k.suit === 'park' ? '#2f8f4e' : '#ffd84a'; }
+  function startMatchAnim(i, bankSlot) {
+    const [ax, ay] = tileXY(i); const bx = bankX(bankSlot), by = BANK_Y;
+    S.anims.push({ kind: S.kinds[i], a: [ax, ay, TW, TH], b: [bx, by, BTW, BTH], t: 0, dur: 0.22 });
+  }
+  function burst(x, y, color) { for (let n = 0; n < 18; n++) { const a = Math.random() * Math.PI * 2, sp = 90 + Math.random() * 160; S.parts.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 60, life: 0.55 + Math.random() * 0.25, age: 0, r: 2 + Math.random() * 3.5, color: Math.random() < 0.3 ? '#fff6e2' : color }); } }
+  function stepFx(dt) {
+    for (const an of S.anims) { an.t += dt; if (an.t >= an.dur && !an.done) { an.done = true; const mx = (an.a[0] + an.b[0]) / 2 + TW / 2, my = (an.a[1] + an.b[1]) / 2 + TH / 2; burst(mx, my, kindColor(KINDS[an.kind])); } }
+    S.anims = S.anims.filter(an => !an.done);
+    for (const p of S.parts) { p.age += dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 420 * dt; }
+    S.parts = S.parts.filter(p => p.age < p.life);
+  }
+  function drawFx() {
+    for (const an of S.anims) { const q = Math.min(1, an.t / an.dur), e = q * q * (3 - 2 * q); for (const [from, to] of [[an.a, an.b], [an.b, an.a]]) { const mx = (an.a[0] + an.b[0]) / 2, my = (an.a[1] + an.b[1]) / 2; const x = from[0] + (mx - from[0]) * e, y = from[1] + (my - from[1]) * e, w = from[2] * (1 + 0.25 * Math.sin(q * Math.PI)), h = from[3] * (1 + 0.25 * Math.sin(q * Math.PI)); ctx.save(); ctx.globalAlpha = 1 - q * 0.3; rr(x, y, w, h, 5, C.tile); ctx.translate(x, y); ctx.scale(w / 40, h / 54); face(KINDS[an.kind]); ctx.restore(); } }
+    for (const p of S.parts) { ctx.globalAlpha = 1 - p.age / p.life; ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 7); ctx.fill(); }
+    ctx.globalAlpha = 1;
   }
   function doHint() { const p = moves(); if (!p.length) { toast('no moves: shuffle', C.sel); return; } S.hint = p[0]; S.hintT = 1.6; S.hints++; S.streak = 0; S.score = Math.max(0, S.score - 10 * level()); if (!S.running && !S.over) S.running = true; }
   function doShuffle() {
-    const slots = [...S.alive]; if (slots.length < 1) return;
+    const slots = [...S.alive]; if (slots.length < 1 || !S.running) return; snapshot();
     const r = rng(dailySeed + 1000 * (S.shuffles + 1));
     for (let t = 0; t < 60; t++) {
       const ks = slots.map(i => S.kinds[i]); for (let i = ks.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [ks[i], ks[j]] = [ks[j], ks[i]]; }
@@ -345,7 +370,7 @@
   async function finish() {
     if (S.lost) {
       document.getElementById('winTitle').textContent = 'Bank full';
-      document.getElementById('winLine').textContent = 'Four tiles banked and no match left. ' + S.alive.size + ' tiles still on the board.';
+      document.getElementById('winLine').textContent = 'Four tiles in the bank. ' + S.alive.size + ' tiles still on the board.';
       document.getElementById('winRank').textContent = 'No score this time.'; document.getElementById('winNext').hidden = true; winSheet.hidden = false; return;
     }
     document.getElementById('winTitle').textContent = S.score + ' points';
@@ -373,13 +398,13 @@
   document.getElementById('winNext').addEventListener('click', () => { const i = levelOf(layoutName); if (i < NAMES.length && i < unlocked) { winSheet.hidden = true; reset(NAMES[i]); } else goHome(); });
 
   // --- Input ---
-  const CHIPS = ['Home', 'Hint', 'Shuffle', 'Board']; const chipW = (W - 178) / CHIPS.length;
+  const CHIPS = ['Home', 'Hint', 'Undo', 'Shuffle', 'Board']; const CHIP_X = 148; const chipW = (W - CHIP_X - 8) / CHIPS.length;
   canvas.addEventListener('pointerup', e => {
     const rect = canvas.getBoundingClientRect(), sx = (e.clientX - rect.left) * W / rect.width, sy = (e.clientY - rect.top) * H / rect.height;
     if (S.over) return;
-    if (sy > 8 && sy < 52 && sx > 170) {
-      const n = Math.floor((sx - 170) / chipW); const c = CHIPS[n];
-      if (c === 'Home') goHome(); else if (c === 'Hint') doHint(); else if (c === 'Shuffle') doShuffle(); else if (c === 'Board') showBoard();
+    if (sy > 8 && sy < 52 && sx > CHIP_X) {
+      const n = Math.floor((sx - CHIP_X) / chipW); const c = CHIPS[n];
+      if (c === 'Home') goHome(); else if (c === 'Hint') doHint(); else if (c === 'Undo') doUndo(); else if (c === 'Shuffle') doShuffle(); else if (c === 'Board') showBoard();
       return;
     }
     if (sy > BANK_Y - 6 && sy < BANK_Y + BTH + 6) return;
@@ -421,8 +446,8 @@
   function drawTile(i) { const [x, y] = tileXY(i); tileBody(x, y, i, S.hint && S.hint.includes(i) && S.hintT > 0, isFree(i), true, TW, TH, ZX, ZY); }
   const bankX = slot => (W - (BANK * BTW + (BANK - 1) * 10)) / 2 + slot * (BTW + 10);
   function drawBank() {
-    rr(bankX(0) - 14, BANK_Y - 14, BANK * BTW + (BANK - 1) * 12 + 28, BTH + 28, 16, 'rgba(22,26,36,.55)');
-    ctx.fillStyle = '#9fb3cc'; ctx.font = `800 8px ${FB}`; ctx.textAlign = 'left'; ctx.fillText('BANK · 4 = OUT', bankX(0) - 8, BANK_Y - 3);
+    rr(bankX(0) - 10, BANK_Y - 8, BANK * BTW + (BANK - 1) * 10 + 20, BTH + 16, 12, 'rgba(22,26,36,.55)');
+    ctx.save(); ctx.translate(bankX(0) - 16, BANK_Y + BTH / 2); ctx.rotate(-Math.PI / 2); ctx.fillStyle = '#9fb3cc'; ctx.font = `800 7px ${FB}`; ctx.textAlign = 'center'; ctx.fillText('BANK', 0, 0); ctx.restore();
     for (let s = 0; s < BANK; s++) {
       const x = bankX(s);
       if (S.bank[s] === undefined) { ctx.strokeStyle = 'rgba(255,248,234,.3)'; ctx.setLineDash([4, 4]); ctx.lineWidth = 1.5; ctx.beginPath(); ctx.roundRect(x, BANK_Y, BTW, BTH, 5); ctx.stroke(); ctx.setLineDash([]); }
@@ -435,15 +460,16 @@
     const order = [...S.alive].sort((a, b) => POS[a].z - POS[b].z || POS[a].y - POS[b].y || POS[b].x - POS[a].x);
     for (const i of order) drawTile(i);
     drawBank();
+    drawFx();
     rr(8, 8, W - 16, 44, 12, 'rgba(22,26,36,.9)');
-    ctx.textAlign = 'left'; ctx.fillStyle = C.cash; ctx.font = `22px ${FD}`; ctx.fillText(S.score, 18, 38);
-    ctx.textAlign = 'center'; ctx.fillStyle = '#9fb3cc'; ctx.font = `800 8px ${FB}`; ctx.fillText('L' + level() + ' ' + layoutName.toUpperCase(), 118, 24);
-    ctx.fillStyle = C.paper; ctx.font = `800 10px ${FB}`; ctx.fillText(S.alive.size + ' left \u00b7 ' + Math.floor(S.t) + 's', 118, 40);
-    CHIPS.forEach((c, k) => { const x = 170 + k * chipW; const label = c === 'Hint' ? 'HINT' : c === 'Shuffle' ? 'SHUF' : c.toUpperCase(); rr(x + 2, 14, chipW - 4, 32, 8, 'rgba(255,248,234,.12)'); ctx.textAlign = 'center'; ctx.fillStyle = C.paper; ctx.font = `800 9px ${FB}`; ctx.fillText(label, x + chipW / 2, 28); if (c === 'Hint' || c === 'Shuffle') { ctx.fillStyle = '#9fb3cc'; ctx.font = `800 7px ${FB}`; ctx.fillText('\u2212' + (c === 'Hint' ? 10 : 30) * level(), x + chipW / 2, 40); } });
+    ctx.textAlign = 'left'; ctx.fillStyle = C.cash; ctx.font = `20px ${FD}`; ctx.fillText(S.score, 16, 38);
+    ctx.textAlign = 'center'; ctx.fillStyle = '#9fb3cc'; ctx.font = `800 7px ${FB}`; ctx.fillText('L' + level() + ' ' + layoutName.toUpperCase().slice(0, 12), 104, 24);
+    ctx.fillStyle = C.paper; ctx.font = `800 9px ${FB}`; ctx.fillText(S.alive.size + ' left \u00b7 ' + Math.floor(S.t) + 's', 104, 40);
+    CHIPS.forEach((c, k) => { const x = CHIP_X + k * chipW; const label = c === 'Shuffle' ? 'SHUF' : c === 'Board' ? 'TOP' : c.toUpperCase(); const dim = c === 'Undo' && !S.history.length; rr(x + 2, 14, chipW - 4, 32, 8, 'rgba(255,248,234,.12)'); ctx.textAlign = 'center'; ctx.fillStyle = dim ? 'rgba(255,248,234,.4)' : C.paper; ctx.font = `800 8px ${FB}`; ctx.fillText(label, x + chipW / 2, 28); const cost = c === 'Hint' ? 10 : c === 'Undo' ? 20 : c === 'Shuffle' ? 30 : 0; if (cost) { ctx.fillStyle = '#9fb3cc'; ctx.font = `800 7px ${FB}`; ctx.fillText('\u2212' + cost * level(), x + chipW / 2, 40); } });
     if (S.toastT > 0) { ctx.globalAlpha = Math.min(1, S.toastT * 3); ctx.fillStyle = S.toast.color; ctx.font = `26px ${FD}`; ctx.strokeStyle = C.ink; ctx.lineWidth = 5; ctx.textAlign = 'center'; ctx.strokeText(S.toast.text, W / 2, 90 - (0.9 - S.toastT) * 20); ctx.fillText(S.toast.text, W / 2, 90 - (0.9 - S.toastT) * 20); ctx.globalAlpha = 1; }
   }
   let last = performance.now();
-  function frame(now) { const dt = Math.min(0.1, (now - last) / 1000); last = now; if (S.running) S.t += dt; if (S.toastT > 0) S.toastT -= dt; if (S.hintT > 0) S.hintT -= dt; render(); requestAnimationFrame(frame); }
+  function frame(now) { const dt = Math.min(0.1, (now - last) / 1000); last = now; if (S.running) S.t += dt; if (S.toastT > 0) S.toastT -= dt; if (S.hintT > 0) S.hintT -= dt; stepFx(dt); render(); requestAnimationFrame(frame); }
   reset(); requestAnimationFrame(frame); syncHome();
   // Re-deal once the uploaded faces arrive, as long as nobody has started playing yet.
   loadPlayers().then(() => { if (!S.running && !S.over && S.bank.length === 0) reset(); syncHome(); });
