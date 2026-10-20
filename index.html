@@ -434,7 +434,8 @@
     } catch (e) { boardBody.innerHTML = '<div class="empty">Couldn\'t reach the leaderboard. Try again in a moment.</div>'; }
   }
   document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => { document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-selected', x === b)); scope = b.dataset.scope; showBoard(); }));
-  document.getElementById('boardClose').addEventListener('click', () => { boardSheet.hidden = true; });
+  let boardFrom = 'home';
+  document.getElementById('boardClose').addEventListener('click', () => { boardSheet.hidden = true; if (boardFrom === 'win') winSheet.hidden = false; else if (boardFrom === 'home' || S.over) { syncHome(); homeSheet.hidden = false; } });
 
   // --- Name and win sheets ---
   const nameSheet = document.getElementById('nameSheet'), nameInput = document.getElementById('nameInput'), photoInput = document.getElementById('photoInput'), photoPrev = document.getElementById('photoBtn');
@@ -472,7 +473,7 @@
     await submitScore();
     if (!S.unlockedNew) { try { const rows = await fetchBoard('today'); const r = rows.findIndex(x => x.name === playerName && x.score === S.score) + 1; if (r) { rank.textContent = r === 1 ? 'Top of today\'s board' : '#' + r + ' today'; rank.hidden = false; } } catch (e) {} }
   }
-  document.getElementById('winBoard').addEventListener('click', () => { winSheet.hidden = true; scope = 'total'; document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-selected', x.dataset.scope === 'total')); showBoard(); });
+  document.getElementById('winBoard').addEventListener('click', () => { winSheet.hidden = true; boardFrom = 'win'; scope = 'total'; document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-selected', x.dataset.scope === 'total')); showBoard(); });
   document.getElementById('winAgain').addEventListener('click', () => { winSheet.hidden = true; reset(); });
   const homeSheet = document.getElementById('homeSheet');
   const levelsEl = document.getElementById('levels');
@@ -493,7 +494,7 @@
   }
   function goHome() { winSheet.hidden = true; boardSheet.hidden = true; reset(); syncHome(); homeSheet.hidden = false; }
   document.getElementById('homePlay').addEventListener('click', () => { if (!playerName) { askName(null); return; } homeSheet.hidden = true; });
-  document.getElementById('homeBoard').addEventListener('click', () => { scope = 'total'; document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-selected', x.dataset.scope === 'total')); showBoard(); });
+  document.getElementById('homeBoard').addEventListener('click', () => { boardFrom = 'home'; scope = 'total'; document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-selected', x.dataset.scope === 'total')); showBoard(); });
   document.getElementById('winHome').addEventListener('click', goHome);
   document.getElementById('winNext').addEventListener('click', () => { const i = levelOf(layoutName); if (i < NAMES.length && i < unlocked) { winSheet.hidden = true; reset(NAMES[i]); } else goHome(); });
   document.getElementById('photoBtn').addEventListener('click', () => photoInput.click());
@@ -504,7 +505,7 @@
   canvas.addEventListener('pointerup', e => {
     ac();
     const rect = canvas.getBoundingClientRect(), sx = (e.clientX - rect.left) * W / rect.width, sy = (e.clientY - rect.top) * H / rect.height;
-    if (S.over) return;
+    if (S.over) { if (winSheet.hidden && boardSheet.hidden && homeSheet.hidden) goHome(); return; }
     if (sy > CTRL_Y - 4 && sy < CTRL_Y + 60) { const n = CTRLS.findIndex((c, i) => sx >= ctrlX(i) - 6 && sx <= ctrlX(i) + 70); const c = CTRLS[n]; if (c === 'Home') goHome(); else if (c === 'Hint') doHint(); else if (c === 'Undo') doUndo(); else if (c === 'Shuffle') doShuffle(); return; }
     if (sy > TRAY_Y) return;
     let hit = null;
