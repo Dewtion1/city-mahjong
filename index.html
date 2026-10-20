@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#10233a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>City Mahjong</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Nunito:wght@600;800&display=swap">
+<style>
+  :root {
+    --ground: #10233a; --felt: #1f5a46; --felt-dark: #184a39; --tile: #fff6e2; --tile-side: #cdb88e; --tile-edge: #8a7352;
+    --paper: #fff8ea; --ink: #161a24; --accent: #d12b2b; --cash: #39c66b; --sel: #ffd84a;
+    --font-display: 'Lilita One', 'Arial Black', Impact, sans-serif; --font-body: 'Nunito', 'Segoe UI', system-ui, sans-serif;
+    color-scheme: dark;
+  }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--ground); color: var(--paper); font-family: var(--font-body); display: flex; flex-direction: column; align-items: center;
+    padding: max(8px, env(safe-area-inset-top, 0px)) max(8px, env(safe-area-inset-right, 0px)) max(8px, env(safe-area-inset-bottom, 0px)) max(8px, env(safe-area-inset-left, 0px)); box-sizing: border-box; overflow: hidden; }
+  #stage { position: relative; width: min(100%, 440px); flex: 1 1 auto; min-height: 0; display: flex; align-items: center; justify-content: center; }
+  canvas { display: block; max-width: 100%; max-height: 100%; aspect-ratio: 9 / 16; border-radius: 22px; box-shadow: 0 18px 50px rgba(0,0,0,.45); touch-action: manipulation; user-select: none; -webkit-user-select: none; background: var(--felt); }
+  .sheet { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(16,24,40,.72); backdrop-filter: blur(4px); padding: 16px; z-index: 5; }
+  .sheet[hidden] { display: none; }
+  .card { background: var(--paper); color: var(--ink); border-radius: 22px; padding: 22px 20px 18px; width: min(100%, 340px); box-shadow: 0 20px 60px rgba(0,0,0,.4); box-sizing: border-box; }
+  .card h2 { font-family: var(--font-display); font-weight: 400; font-size: 30px; margin: 0 0 8px; line-height: 1; }
+  .card p { margin: 6px 0 12px; font-weight: 600; font-size: 14px; color: #5a6273; }
+  .card input { width: 100%; box-sizing: border-box; font: 800 18px var(--font-body); padding: 12px 14px; border: 2px solid #d9d2c3; border-radius: 12px; background: #fff; color: var(--ink); }
+  .card input:focus-visible { outline: 3px solid var(--sel); outline-offset: 1px; }
+  .btn { margin-top: 14px; width: 100%; border: 0; border-radius: 14px; padding: 13px; background: var(--accent); color: var(--paper); font-family: var(--font-display); font-size: 20px; letter-spacing: .5px; cursor: pointer; }
+  .btn.quiet { background: #e9e3d6; color: var(--ink); margin-top: 8px; }
+  .btn:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 10px; }
+  .tabs button { flex: 1; border: 0; border-radius: 10px; padding: 8px; font: 800 12px var(--font-body); background: #e9e3d6; color: #5a6273; letter-spacing: .5px; cursor: pointer; }
+  .tabs button[aria-selected="true"] { background: var(--ink); color: var(--paper); }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; font-weight: 700; }
+  td { padding: 7px 4px; border-bottom: 1px solid #ece6d8; }
+  td.n { color: #8a8f99; width: 24px; }
+  td.s { text-align: right; font-family: var(--font-display); font-size: 18px; color: #1f5a46; }
+  td.t { text-align: right; color: #8a8f99; font-size: 12px; width: 44px; }
+  tr.me td { background: #fff3c4; }
+  .empty { text-align: center; color: #8a8f99; padding: 18px 0; font-weight: 700; }
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="c" width="360" height="640" aria-label="City Mahjong"></canvas></div>
+
+<div class="sheet" id="homeSheet">
+  <div class="card" style="text-align:center">
+    <div style="font-family:var(--font-display);font-size:13px;letter-spacing:2px;color:#8a8f99">DAILY TILE PUZZLE</div>
+    <h2 style="font-size:40px;margin:4px 0 2px">City Mahjong</h2>
+    <p id="homeDay">Same board for everyone today.</p>
+    <div class="tabs" role="tablist" aria-label="Layout" style="margin-top:6px">
+      <button type="button" role="tab" id="homeTurtle" aria-selected="true">TURTLE</button>
+      <button type="button" role="tab" id="homeTowers" aria-selected="false">TOWERS</button>
+    </div>
+    <button class="btn" type="button" id="homePlay">PLAY</button>
+    <button class="btn quiet" type="button" id="homeBoard">Leaderboard</button>
+    <button class="btn quiet" type="button" id="homeName">Playing as: <span id="homeWho">?</span></button>
+    <p class="sub" style="margin:12px 0 0">Tap a free tile to bank it, tap its match to clear both. Four in the bank with no match and you're out.</p>
+  </div>
+</div>
+
+<div class="sheet" id="nameSheet" hidden>
+  <form class="card" id="nameForm">
+    <h2>Who's playing?</h2>
+    <p>Your name goes on the family leaderboard.</p>
+    <label for="nameInput" style="position:absolute;left:-9999px">Name</label>
+    <input id="nameInput" maxlength="20" autocomplete="nickname" placeholder="Your name" required>
+    <button class="btn" type="submit">Let's go</button>
+  </form>
+</div>
+
+<div class="sheet" id="boardSheet" hidden>
+  <div class="card">
+    <h2>Leaderboard</h2>
+    <p id="boardSub">Today · Turtle</p>
+    <div class="tabs" role="tablist">
+      <button type="button" role="tab" aria-selected="true" data-scope="today">TODAY</button>
+      <button type="button" role="tab" aria-selected="false" data-scope="week">THIS WEEK</button>
+      <button type="button" role="tab" aria-selected="false" data-scope="all">ALL TIME</button>
+    </div>
+    <div id="boardBody"><div class="empty">Loading…</div></div>
+    <button class="btn quiet" type="button" id="boardClose">Back to the game</button>
+  </div>
+</div>
+
+<div class="sheet" id="winSheet" hidden>
+  <div class="card" style="text-align:center">
+    <h2 id="winTitle">Cleared!</h2>
+    <p id="winLine"></p>
+    <p id="winRank" style="color:#1f5a46"></p>
+    <button class="btn" type="button" id="winBoard">See the leaderboard</button>
+    <button class="btn quiet" type="button" id="winAgain">Play again</button>
+    <button class="btn quiet" type="button" id="winHome">Home</button>
+  </div>
+</div>
+
+<script src="faces.js"></script>
+<script>
+(function () {
+  const SUPA_URL = 'https://zmxkxxlvaewwwqgrphlk.supabase.co', SUPA_KEY = 'sb_publishable_Opzos_yWd8FFPS1nATl5_Q_NZZay9fm';
+  const canvas = document.getElementById('c'), ctx = canvas.getContext('2d');
+  const W = 360, H = 640;
+  const css = getComputedStyle(document.documentElement), col = n => css.getPropertyValue(n).trim();
+  const FD = "'Lilita One', 'Arial Black', Impact, sans-serif", FB = "'Nunito', 'Segoe UI', system-ui, sans-serif";
+  const C = { felt: col('--felt'), feltDark: col('--felt-dark'), tile: col('--tile'), side: col('--tile-side'), edge: col('--tile-edge'), paper: col('--paper'), ink: col('--ink'), accent: col('--accent'), cash: col('--cash'), sel: col('--sel') };
+  function rng(seed) { let s = seed >>> 0 || 1; return () => { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; }; }
+
+  // --- Tile kinds: three London suits of nine, plus seven family faces = 34 kinds. ---
+  const KINDS = [];
+  for (const suit of ['bus', 'cab', 'park']) for (let n = 1; n <= 9; n++) KINDS.push({ suit, n });
+  const faceImgs = FACES.map(src => { const im = new Image(); im.src = src; return im; });
+  faceImgs.forEach((im, i) => KINDS.push({ suit: 'face', n: i }));
+  // Photos people uploaded in Stair Cleaning live with their scores; pull them in as extra face tiles.
+  async function loadUploadedFaces() {
+    try {
+      const res = await fetch('https://zmxkxxlvaewwwqgrphlk.supabase.co/rest/v1/stair_cleaning_scores?select=player,photo,device_id,updated_at&photo=not.is.null&face=eq.-1&order=updated_at.desc&limit=300', { headers: { apikey: 'sb_publishable_Opzos_yWd8FFPS1nATl5_Q_NZZay9fm', Authorization: 'Bearer sb_publishable_Opzos_yWd8FFPS1nATl5_Q_NZZay9fm' } });
+      if (!res.ok) return 0;
+      const rows = await res.json(); const latest = {};
+      for (const r of rows) { if (!r.photo || !/^data:image\//.test(r.photo) || r.photo.length > 60000) continue; const k = (r.device_id || '') + '|' + String(r.player || '').trim().toLowerCase(); if (!latest[k]) latest[k] = r; }
+      const extra = Object.values(latest).sort((a, b) => a.player.localeCompare(b.player)).slice(0, 9);
+      const loaded = await Promise.all(extra.map(r => new Promise(res => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = r.photo; })));
+      loaded.forEach((im, i) => { if (im && im.naturalWidth) { faceImgs.push(im); KINDS.push({ suit: 'face', n: faceImgs.length - 1, who: extra[i].player }); } });
+      return loaded.filter(Boolean).length;
+    } catch (e) { return 0; }
+  }
+
+  // --- Layouts: half-tile units, a tile is 2 by 2. ---
+  function block(x0, y0, cols, rows, z, out) { for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) out.push({ x: x0 + c * 2, y: y0 + r * 2, z }); return out; }
+  const LAYOUTS = {
+    Turtle: () => { // 32 big tiles
+      const p = []; const rows = [[1, 3], [0, 4], [0, 4], [0, 4], [1, 3]];
+      rows.forEach(([a, b], r) => { for (let c = a; c <= b; c++) p.push({ x: c * 2, y: r * 2, z: 0 }); });
+      block(2, 2, 3, 3, 1, p); block(3, 4, 2, 1, 2, p);
+      return p;
+    },
+    Towers: () => { // 28 big tiles
+      const p = []; block(0, 0, 2, 5, 0, p); block(6, 0, 2, 5, 0, p); block(4, 4, 1, 2, 0, p);
+      block(1, 2, 1, 3, 1, p); block(7, 2, 1, 3, 1, p);
+      return p;
+    }
+  };
+  const NAMES = Object.keys(LAYOUTS);
+
+  const BANK = 4, BANK_Y = 548, BTW = 40, BTH = 54, OY_TOP = 104;
+  let POS, TW, TH, UX, UY, OX, OY, ZX, ZY, above, leftOf, rightOf;
+  function setLayout(name) {
+    POS = LAYOUTS[name]();
+    const minX = Math.min(...POS.map(p => p.x)), maxX = Math.max(...POS.map(p => p.x + 2)), minY = Math.min(...POS.map(p => p.y)), maxY = Math.max(...POS.map(p => p.y + 2)), maxZ = Math.max(...POS.map(p => p.z));
+    const wHalf = maxX - minX, hHalf = maxY - minY;
+    const availW = W - 20 - maxZ * 5, availH = BANK_Y - 18 - OY_TOP - maxZ * 6;
+    TW = Math.min(72, Math.floor(availW / (wHalf / 2)), Math.floor(availH / (hHalf / 2) / 1.35)); TH = Math.round(TW * 1.35); UX = TW / 2; UY = TH / 2;
+    ZX = Math.round(TW * 0.12); ZY = -Math.round(TH * 0.11);
+    OX = (W - wHalf * UX - maxZ * ZX) / 2 - minX * UX; OY = OY_TOP + (availH - hHalf * UY) / 2 - minY * UY - maxZ * ZY;
+    const overlaps = (a, b) => Math.abs(a.x - b.x) < 2 && Math.abs(a.y - b.y) < 2;
+    above = POS.map(p => POS.map((q, j) => j).filter(j => POS[j].z === p.z + 1 && overlaps(p, POS[j])));
+    leftOf = POS.map(p => POS.map((q, j) => j).filter(j => POS[j].z === p.z && POS[j].x <= p.x - 1 && POS[j].x > p.x - 3 && Math.abs(POS[j].y - p.y) < 2));
+    rightOf = POS.map(p => POS.map((q, j) => j).filter(j => POS[j].z === p.z && POS[j].x >= p.x + 1 && POS[j].x < p.x + 3 && Math.abs(POS[j].y - p.y) < 2));
+  }
+  function deal(seed, slots) {
+    const r = rng(seed); const present = new Set(slots), kind = {};
+    // Faces first (every family member on the board), then numbered suits to fill the rest; cycle if the board is bigger than the kind set.
+    const shuf = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+    const faces = shuf(KINDS.map((k, i) => k.suit === 'face' ? i : -1).filter(i => i >= 0)), suits = shuf(KINDS.map((k, i) => k.suit !== 'face' ? i : -1).filter(i => i >= 0));
+    const order = faces.concat(suits), pairs = []; for (let i = 0; i < slots.length / 2; i++) pairs.push(order[i % order.length]);
+    shuf(pairs);
+    const free = () => [...present].filter(i => !above[i].some(j => present.has(j)) && !(leftOf[i].some(j => present.has(j)) && rightOf[i].some(j => present.has(j))));
+    for (const k of pairs) {
+      let a = free(); if (a.length < 2) return null; const i = a[Math.floor(r() * a.length)]; present.delete(i);
+      let b = free().filter(j => j !== i); if (!b.length) return null; const j = b[Math.floor(r() * b.length)]; present.delete(j);
+      kind[i] = k; kind[j] = k;
+    }
+    return kind;
+  }
+  function dealRetry(seed, slots) { for (let t = 0; t < 80; t++) { const k = deal(seed + t * 7919, slots); if (k) return k; } return null; }
+
+  // --- State ---
+  const today = new Date(); const DAY = today.getUTCFullYear() + '-' + String(today.getUTCMonth() + 1).padStart(2, '0') + '-' + String(today.getUTCDate()).padStart(2, '0');
+  const dailySeed = Number(DAY.replace(/-/g, ''));
+  let S, layoutName = 'Turtle', playerName = '';
+  try { playerName = localStorage.getItem('cm_name') || ''; layoutName = NAMES.includes(localStorage.getItem('cm_layout')) ? localStorage.getItem('cm_layout') : 'Turtle'; } catch (e) {}
+  function reset(name) {
+    if (name) { layoutName = name; try { localStorage.setItem('cm_layout', name); } catch (e) {} }
+    setLayout(layoutName);
+    const kinds = dealRetry(dailySeed + NAMES.indexOf(layoutName) * 101, POS.map((_, i) => i));
+    S = { kinds, alive: new Set(POS.map((_, i) => i)), bank: [], t: 0, running: false, over: false, score: 0, last: 0, hint: null, hintT: 0, toast: null, toastT: 0, shuffles: 0, hints: 0, submitted: false, lost: false };
+  }
+  const isFree = i => S.alive.has(i) && !above[i].some(j => S.alive.has(j)) && !(leftOf[i].some(j => S.alive.has(j)) && rightOf[i].some(j => S.alive.has(j)));
+  function moves() { const f = [...S.alive].filter(isFree); const out = []; for (const a of f) { const b = S.bank.find(b => S.kinds[b] === S.kinds[a]); if (b !== undefined) out.push([a, b]); } for (let a = 0; a < f.length; a++) for (let b = a + 1; b < f.length; b++) if (S.kinds[f[a]] === S.kinds[f[b]]) out.push([f[a], f[b]]); return out; }
+  function toast(text, color) { S.toast = { text, color }; S.toastT = 0.9; }
+  function clearPair() {
+    const quick = S.t - S.last < 4; S.last = S.t; S.hint = null;
+    const gained = 10 + (quick ? 5 : 0); S.score += gained; toast('+' + gained + (quick ? ' quick' : ''), C.cash);
+    if (!S.alive.size && !S.bank.length) { S.running = false; S.over = true; S.score += Math.max(0, 300 - Math.floor(S.t)); finish(); }
+    else if (!moves().length) toast('no moves: shuffle', C.sel);
+  }
+  function pick(i) {
+    if (!S.running) { if (!S.over) S.running = true; else return; }
+    if (!isFree(i)) { toast('blocked', C.accent); return; }
+    const b = S.bank.findIndex(k => S.kinds[k] === S.kinds[i]);
+    if (b >= 0) { S.bank.splice(b, 1); S.alive.delete(i); clearPair(); return; }
+    if (S.bank.length >= BANK) { toast('bank full', C.accent); return; }
+    S.alive.delete(i); S.bank.push(i);
+    if (S.bank.length >= BANK && !moves().length) { S.running = false; S.over = true; S.lost = true; finish(); }
+  }
+  function doHint() { const p = moves(); if (!p.length) { toast('no moves: shuffle', C.sel); return; } S.hint = p[0]; S.hintT = 1.6; S.hints++; S.score = Math.max(0, S.score - 5); if (!S.running && !S.over) S.running = true; }
+  function doShuffle() {
+    const slots = [...S.alive]; if (slots.length < 1) return;
+    const r = rng(dailySeed + 1000 * (S.shuffles + 1));
+    for (let t = 0; t < 60; t++) {
+      const ks = slots.map(i => S.kinds[i]); for (let i = ks.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [ks[i], ks[j]] = [ks[j], ks[i]]; }
+      slots.forEach((i, n) => S.kinds[i] = ks[n]);
+      if (moves().length) break;
+    }
+    S.hint = null; S.shuffles++; S.score = Math.max(0, S.score - 20); toast('shuffled', C.paper);
+  }
+
+  // --- Leaderboard (Supabase REST) ---
+  const headers = { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY, 'Content-Type': 'application/json' };
+  async function submitScore() {
+    if (S.submitted || !playerName) return; S.submitted = true;
+    try { await fetch(SUPA_URL + '/rest/v1/city_mahjong_scores', { method: 'POST', headers: Object.assign({ Prefer: 'return=minimal' }, headers), body: JSON.stringify({ name: playerName, layout: layoutName, day: DAY, score: S.score, seconds: Math.floor(S.t) }) }); } catch (e) {}
+  }
+  async function fetchBoard(scope) {
+    let q = SUPA_URL + '/rest/v1/city_mahjong_scores?select=name,score,seconds,day&layout=eq.' + layoutName + '&order=score.desc,seconds.asc&limit=10';
+    if (scope === 'today') q += '&day=eq.' + DAY;
+    if (scope === 'week') { const d = new Date(today); d.setUTCDate(d.getUTCDate() - 6); q += '&day=gte.' + d.toISOString().slice(0, 10); }
+    const res = await fetch(q, { headers }); if (!res.ok) throw new Error('board'); return res.json();
+  }
+  const boardSheet = document.getElementById('boardSheet'), boardBody = document.getElementById('boardBody'), boardSub = document.getElementById('boardSub');
+  let scope = 'today';
+  async function showBoard() {
+    boardSheet.hidden = false; boardSub.textContent = (scope === 'today' ? 'Today' : scope === 'week' ? 'This week' : 'All time') + ' · ' + layoutName;
+    boardBody.innerHTML = '<div class="empty">Loading…</div>';
+    try {
+      const rows = await fetchBoard(scope);
+      if (!rows.length) { boardBody.innerHTML = '<div class="empty">No scores yet. Be the first.</div>'; return; }
+      const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+      boardBody.innerHTML = '<table>' + rows.map((r, i) => `<tr class="${r.name === playerName ? 'me' : ''}"><td class="n">${i + 1}</td><td>${esc(r.name)}</td><td class="t">${r.seconds}s</td><td class="s">${r.score}</td></tr>`).join('') + '</table>';
+    } catch (e) { boardBody.innerHTML = '<div class="empty">Couldn\'t reach the leaderboard. Try again in a moment.</div>'; }
+  }
+  document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => { document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-selected', x === b)); scope = b.dataset.scope; showBoard(); }));
+  document.getElementById('boardClose').addEventListener('click', () => { boardSheet.hidden = true; });
+
+  // --- Name and win sheets ---
+  const nameSheet = document.getElementById('nameSheet'), nameInput = document.getElementById('nameInput');
+  function askName() { nameSheet.hidden = false; nameInput.value = playerName; setTimeout(() => nameInput.focus(), 50); }
+  document.getElementById('nameForm').addEventListener('submit', e => { e.preventDefault(); playerName = nameInput.value.trim().slice(0, 20); if (!playerName) return; try { localStorage.setItem('cm_name', playerName); } catch (x) {} nameSheet.hidden = true; syncHome(); });
+  const winSheet = document.getElementById('winSheet');
+  async function finish() {
+    if (S.lost) {
+      document.getElementById('winTitle').textContent = 'Bank full';
+      document.getElementById('winLine').textContent = 'Four tiles banked and no match left. ' + S.alive.size + ' tiles still on the board.';
+      document.getElementById('winRank').textContent = 'No score this time.'; winSheet.hidden = false; return;
+    }
+    document.getElementById('winTitle').textContent = S.score + ' points';
+    document.getElementById('winLine').textContent = layoutName + ' cleared in ' + Math.floor(S.t) + 's · ' + S.hints + ' hints · ' + S.shuffles + ' shuffles';
+    document.getElementById('winRank').textContent = ''; winSheet.hidden = false;
+    await submitScore();
+    try { const rows = await fetchBoard('today'); const rank = rows.findIndex(r => r.name === playerName && r.score === S.score) + 1; if (rank) document.getElementById('winRank').textContent = rank === 1 ? 'Top of today\'s board!' : '#' + rank + ' today'; } catch (e) {}
+  }
+  document.getElementById('winBoard').addEventListener('click', () => { winSheet.hidden = true; scope = 'today'; document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-selected', x.dataset.scope === 'today')); showBoard(); });
+  document.getElementById('winAgain').addEventListener('click', () => { winSheet.hidden = true; reset(); });
+  const homeSheet = document.getElementById('homeSheet');
+  function syncHome() { document.getElementById('homeTurtle').setAttribute('aria-selected', layoutName === 'Turtle'); document.getElementById('homeTowers').setAttribute('aria-selected', layoutName === 'Towers'); document.getElementById('homeWho').textContent = playerName || 'tap to set'; document.getElementById('homeDay').textContent = 'Same board for everyone today, ' + DAY.slice(8) + '/' + DAY.slice(5, 7) + '.'; }
+  function goHome() { winSheet.hidden = true; boardSheet.hidden = true; reset(); syncHome(); homeSheet.hidden = false; }
+  document.getElementById('homeTurtle').addEventListener('click', () => { reset('Turtle'); syncHome(); });
+  document.getElementById('homeTowers').addEventListener('click', () => { reset('Towers'); syncHome(); });
+  document.getElementById('homePlay').addEventListener('click', () => { if (!playerName) { askName(); return; } homeSheet.hidden = true; });
+  document.getElementById('homeBoard').addEventListener('click', () => { scope = 'today'; showBoard(); });
+  document.getElementById('homeName').addEventListener('click', () => askName());
+  document.getElementById('winHome').addEventListener('click', goHome);
+
+  // --- Input ---
+  const CHIPS = ['Home', 'Hint', 'Shuffle', 'Board']; const chipW = (W - 24) / CHIPS.length;
+  canvas.addEventListener('pointerup', e => {
+    const rect = canvas.getBoundingClientRect(), sx = (e.clientX - rect.left) * W / rect.width, sy = (e.clientY - rect.top) * H / rect.height;
+    if (S.over) return;
+    if (sy > 72 && sy < 100) {
+      const n = Math.floor((sx - 12) / chipW); const c = CHIPS[n];
+      if (c === 'Home') goHome(); else if (c === 'Hint') doHint(); else if (c === 'Shuffle') doShuffle(); else if (c === 'Board') showBoard();
+      return;
+    }
+    if (sy > BANK_Y - 6 && sy < BANK_Y + BTH + 6) return;
+    let hit = null;
+    for (const i of [...S.alive].sort((a, b) => POS[b].z - POS[a].z || POS[b].y - POS[a].y)) { const [x, y] = tileXY(i); if (sx >= x && sx <= x + TW && sy >= y && sy <= y + TH) { hit = i; break; } }
+    if (hit !== null) pick(hit);
+  });
+  function tileXY(i) { const p = POS[i]; return [OX + p.x * UX + p.z * ZX, OY + p.y * UY + p.z * ZY]; }
+
+  // --- Drawing ---
+  function rr(x, y, w, h, r, fill) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); ctx.fillStyle = fill; ctx.fill(); }
+  function face(k) {
+    const cx = 20;
+    if (k.suit === 'face') {
+      const im = faceImgs[k.n];
+      ctx.save(); ctx.beginPath(); ctx.roundRect(3, 3, 34, 48, 4); ctx.clip();
+      if (im.complete && im.naturalWidth) { const s = Math.max(34 / im.naturalWidth, 48 / im.naturalHeight); const w = im.naturalWidth * s, h = im.naturalHeight * s; ctx.drawImage(im, 3 + (34 - w) / 2, 3 + (48 - h) / 2, w, h); }
+      else { ctx.fillStyle = '#d9d2c3'; ctx.fillRect(3, 3, 34, 48); ctx.fillStyle = '#8a7352'; ctx.font = `20px ${FD}`; ctx.textAlign = 'center'; ctx.fillText('?', 20, 34); }
+      ctx.restore(); return;
+    }
+    const color = k.suit === 'bus' ? '#d12b2b' : k.suit === 'cab' ? '#1f232c' : '#2f8f4e';
+    ctx.fillStyle = color; ctx.font = `24px ${FD}`; ctx.textAlign = 'center'; ctx.fillText(k.n, cx, 25);
+    const marks = Math.min(3, k.n);
+    for (let m = 0; m < marks; m++) { const gx = cx - (marks - 1) * 5.5 + m * 11;
+      if (k.suit === 'bus') rr(gx - 4, 31, 8, 10, 2, color);
+      else if (k.suit === 'cab') rr(gx - 4.5, 33, 9, 6, 2.5, color);
+      else { ctx.fillStyle = color; ctx.beginPath(); ctx.arc(gx, 36, 4, 0, 7); ctx.fill(); } }
+    ctx.fillStyle = '#8a8f99'; ctx.font = `800 7px ${FB}`; ctx.fillText(k.suit.toUpperCase(), cx, 49);
+  }
+  function tileBody(x, y, i, hint, free, lift, w, h, zx, zy) {
+    const s = w / 40;
+    if (lift) { rr(x - zx + 1, y - zy + 1, w, h, 5 * s, C.edge); rr(x - 2 * s, y + 2 * s, w, h, 5 * s, C.side); }
+    rr(x, y, w, h, 5 * s, hint ? '#c8f0d4' : C.tile);
+    ctx.strokeStyle = C.edge; ctx.lineWidth = 1; ctx.beginPath(); ctx.roundRect(x + 0.5, y + 0.5, w - 1, h - 1, 5 * s); ctx.stroke();
+    ctx.save(); ctx.translate(x, y); ctx.scale(s, s); face(KINDS[S.kinds[i]]); ctx.restore();
+    if (!free) { ctx.fillStyle = 'rgba(40,60,50,.3)'; ctx.beginPath(); ctx.roundRect(x, y, w, h, 5 * s); ctx.fill(); }
+  }
+  function drawTile(i) { const [x, y] = tileXY(i); tileBody(x, y, i, S.hint && S.hint.includes(i) && S.hintT > 0, isFree(i), true, TW, TH, ZX, ZY); }
+  const bankX = slot => (W - (BANK * BTW + (BANK - 1) * 12)) / 2 + slot * (BTW + 12);
+  function drawBank() {
+    rr(bankX(0) - 14, BANK_Y - 14, BANK * BTW + (BANK - 1) * 12 + 28, BTH + 28, 16, 'rgba(22,26,36,.55)');
+    ctx.fillStyle = '#9fb3cc'; ctx.font = `800 8px ${FB}`; ctx.textAlign = 'left'; ctx.fillText('BANK · 4 = OUT', bankX(0) - 8, BANK_Y - 3);
+    for (let s = 0; s < BANK; s++) {
+      const x = bankX(s);
+      if (S.bank[s] === undefined) { ctx.strokeStyle = 'rgba(255,248,234,.3)'; ctx.setLineDash([4, 4]); ctx.lineWidth = 1.5; ctx.beginPath(); ctx.roundRect(x, BANK_Y, BTW, BTH, 5); ctx.stroke(); ctx.setLineDash([]); }
+      else tileBody(x, BANK_Y, S.bank[s], S.hint && S.hint.includes(S.bank[s]) && S.hintT > 0, true, false, BTW, BTH, 0, 0);
+    }
+  }
+  function render() {
+    ctx.fillStyle = C.felt; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = C.feltDark; for (let y = 0; y < H; y += 24) for (let x = (y / 24 % 2) * 12; x < W; x += 24) ctx.fillRect(x, y, 2, 2);
+    const order = [...S.alive].sort((a, b) => POS[a].z - POS[b].z || POS[a].y - POS[b].y || POS[b].x - POS[a].x);
+    for (const i of order) drawTile(i);
+    drawBank();
+    rr(10, 12, W - 20, 56, 16, 'rgba(22,26,36,.9)');
+    ctx.textAlign = 'left'; ctx.fillStyle = C.cash; ctx.font = `28px ${FD}`; ctx.fillText(S.score, 26, 51);
+    ctx.textAlign = 'center'; ctx.fillStyle = '#9fb3cc'; ctx.font = `800 10px ${FB}`; ctx.fillText('CITY MAHJONG · DAILY ' + DAY.slice(8) + '/' + DAY.slice(5, 7), W / 2 + 6, 34);
+    ctx.fillStyle = C.paper; ctx.font = `800 12px ${FB}`; ctx.fillText(S.alive.size + ' tiles left', W / 2 + 6, 54);
+    ctx.textAlign = 'right'; ctx.fillStyle = C.paper; ctx.font = `22px ${FD}`; ctx.fillText(Math.floor(S.t) + 's', W - 26, 50);
+    CHIPS.forEach((c, k) => { const x = 12 + k * chipW; const on = false; const label = c === 'Hint' ? 'HINT −5' : c === 'Shuffle' ? 'SHUFFLE −20' : c.toUpperCase(); rr(x + 2, 74, chipW - 4, 24, 8, on ? C.sel : 'rgba(22,26,36,.6)'); ctx.textAlign = 'center'; ctx.fillStyle = on ? C.ink : C.paper; ctx.font = `800 9px ${FB}`; ctx.fillText(label, x + chipW / 2, 90); });
+    if (S.toastT > 0) { ctx.globalAlpha = Math.min(1, S.toastT * 3); ctx.fillStyle = S.toast.color; ctx.font = `26px ${FD}`; ctx.strokeStyle = C.ink; ctx.lineWidth = 5; ctx.textAlign = 'center'; ctx.strokeText(S.toast.text, W / 2, 130 - (0.9 - S.toastT) * 20); ctx.fillText(S.toast.text, W / 2, 130 - (0.9 - S.toastT) * 20); ctx.globalAlpha = 1; }
+  }
+  let last = performance.now();
+  function frame(now) { const dt = Math.min(0.1, (now - last) / 1000); last = now; if (S.running) S.t += dt; if (S.toastT > 0) S.toastT -= dt; if (S.hintT > 0) S.hintT -= dt; render(); requestAnimationFrame(frame); }
+  reset(); requestAnimationFrame(frame); syncHome();
+  // Re-deal once the uploaded faces arrive, as long as nobody has started playing yet.
+  loadUploadedFaces().then(n => { if (n && !S.running && !S.over && S.bank.length === 0) reset(); });
+})();
+</script>
+</body>
+</html>
