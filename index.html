@@ -206,14 +206,14 @@
   for (let L = 11; L <= 50; L++) { const name = STREETS[(L - 11) % STREETS.length]; LAYOUTS[name] = (lv => () => genLayout(lv))(L); }
   const NAMES = Object.keys(LAYOUTS);
 
-  const BANK = 4, BANK_Y = 548, BTW = 40, BTH = 54, OY_TOP = 104;
+  const BANK = 4, BANK_Y = 578, BTW = 32, BTH = 42, OY_TOP = 60;
   let POS, TW, TH, UX, UY, OX, OY, ZX, ZY, above, leftOf, rightOf;
   function setLayout(name) {
     POS = LAYOUTS[name]();
     const minX = Math.min(...POS.map(p => p.x)), maxX = Math.max(...POS.map(p => p.x + 2)), minY = Math.min(...POS.map(p => p.y)), maxY = Math.max(...POS.map(p => p.y + 2)), maxZ = Math.max(...POS.map(p => p.z));
     const wHalf = maxX - minX, hHalf = maxY - minY;
-    const availW = W - 20 - maxZ * 5, availH = BANK_Y - 18 - OY_TOP - maxZ * 6;
-    TW = Math.min(64, Math.floor(availW / (wHalf / 2)), Math.floor(availH / (hHalf / 2) / 1.35)); TH = Math.round(TW * 1.35); UX = TW / 2; UY = TH / 2;
+    const availW = W - 16 - maxZ * 5, availH = BANK_Y - 14 - OY_TOP - maxZ * 6;
+    TW = Math.min(72, Math.floor(availW / (wHalf / 2)), Math.floor(availH / (hHalf / 2) / 1.35)); TH = Math.round(TW * 1.35); UX = TW / 2; UY = TH / 2;
     ZX = Math.round(TW * 0.12); ZY = -Math.round(TH * 0.11);
     OX = (W - wHalf * UX - maxZ * ZX) / 2 - minX * UX; OY = OY_TOP + (availH - hHalf * UY) / 2 - minY * UY - maxZ * ZY;
     const overlaps = (a, b) => Math.abs(a.x - b.x) < 2 && Math.abs(a.y - b.y) < 2;
@@ -368,12 +368,12 @@
   document.getElementById('winNext').addEventListener('click', () => { const i = levelOf(layoutName); if (i < NAMES.length && i < unlocked) { winSheet.hidden = true; reset(NAMES[i]); } else goHome(); });
 
   // --- Input ---
-  const CHIPS = ['Home', 'Hint', 'Shuffle', 'Board']; const chipW = (W - 24) / CHIPS.length;
+  const CHIPS = ['Home', 'Hint', 'Shuffle', 'Board']; const chipW = (W - 178) / CHIPS.length;
   canvas.addEventListener('pointerup', e => {
     const rect = canvas.getBoundingClientRect(), sx = (e.clientX - rect.left) * W / rect.width, sy = (e.clientY - rect.top) * H / rect.height;
     if (S.over) return;
-    if (sy > 72 && sy < 100) {
-      const n = Math.floor((sx - 12) / chipW); const c = CHIPS[n];
+    if (sy > 8 && sy < 52 && sx > 170) {
+      const n = Math.floor((sx - 170) / chipW); const c = CHIPS[n];
       if (c === 'Home') goHome(); else if (c === 'Hint') doHint(); else if (c === 'Shuffle') doShuffle(); else if (c === 'Board') showBoard();
       return;
     }
@@ -414,7 +414,7 @@
     if (!free) { ctx.fillStyle = 'rgba(40,60,50,.3)'; ctx.beginPath(); ctx.roundRect(x, y, w, h, 5 * s); ctx.fill(); }
   }
   function drawTile(i) { const [x, y] = tileXY(i); tileBody(x, y, i, S.hint && S.hint.includes(i) && S.hintT > 0, isFree(i), true, TW, TH, ZX, ZY); }
-  const bankX = slot => (W - (BANK * BTW + (BANK - 1) * 12)) / 2 + slot * (BTW + 12);
+  const bankX = slot => (W - (BANK * BTW + (BANK - 1) * 10)) / 2 + slot * (BTW + 10);
   function drawBank() {
     rr(bankX(0) - 14, BANK_Y - 14, BANK * BTW + (BANK - 1) * 12 + 28, BTH + 28, 16, 'rgba(22,26,36,.55)');
     ctx.fillStyle = '#9fb3cc'; ctx.font = `800 8px ${FB}`; ctx.textAlign = 'left'; ctx.fillText('BANK · 4 = OUT', bankX(0) - 8, BANK_Y - 3);
@@ -430,13 +430,12 @@
     const order = [...S.alive].sort((a, b) => POS[a].z - POS[b].z || POS[a].y - POS[b].y || POS[b].x - POS[a].x);
     for (const i of order) drawTile(i);
     drawBank();
-    rr(10, 12, W - 20, 56, 16, 'rgba(22,26,36,.9)');
-    ctx.textAlign = 'left'; ctx.fillStyle = C.cash; ctx.font = `28px ${FD}`; ctx.fillText(S.score, 26, 51);
-    ctx.textAlign = 'center'; ctx.fillStyle = '#9fb3cc'; ctx.font = `800 10px ${FB}`; ctx.fillText('CITY MAHJONG · DAILY ' + DAY.slice(8) + '/' + DAY.slice(5, 7), W / 2 + 6, 34);
-    ctx.fillStyle = C.paper; ctx.font = `800 12px ${FB}`; ctx.fillText(S.alive.size + ' tiles left', W / 2 + 6, 54);
-    ctx.textAlign = 'right'; ctx.fillStyle = C.paper; ctx.font = `22px ${FD}`; ctx.fillText(Math.floor(S.t) + 's', W - 26, 50);
-    CHIPS.forEach((c, k) => { const x = 12 + k * chipW; const on = false; const label = c === 'Hint' ? 'HINT −5' : c === 'Shuffle' ? 'SHUFFLE −20' : c.toUpperCase(); rr(x + 2, 74, chipW - 4, 24, 8, on ? C.sel : 'rgba(22,26,36,.6)'); ctx.textAlign = 'center'; ctx.fillStyle = on ? C.ink : C.paper; ctx.font = `800 9px ${FB}`; ctx.fillText(label, x + chipW / 2, 90); });
-    if (S.toastT > 0) { ctx.globalAlpha = Math.min(1, S.toastT * 3); ctx.fillStyle = S.toast.color; ctx.font = `26px ${FD}`; ctx.strokeStyle = C.ink; ctx.lineWidth = 5; ctx.textAlign = 'center'; ctx.strokeText(S.toast.text, W / 2, 130 - (0.9 - S.toastT) * 20); ctx.fillText(S.toast.text, W / 2, 130 - (0.9 - S.toastT) * 20); ctx.globalAlpha = 1; }
+    rr(8, 8, W - 16, 44, 12, 'rgba(22,26,36,.9)');
+    ctx.textAlign = 'left'; ctx.fillStyle = C.cash; ctx.font = `22px ${FD}`; ctx.fillText(S.score, 18, 38);
+    ctx.textAlign = 'center'; ctx.fillStyle = '#9fb3cc'; ctx.font = `800 8px ${FB}`; ctx.fillText('L' + level() + ' ' + layoutName.toUpperCase(), 118, 24);
+    ctx.fillStyle = C.paper; ctx.font = `800 10px ${FB}`; ctx.fillText(S.alive.size + ' left \u00b7 ' + Math.floor(S.t) + 's', 118, 40);
+    CHIPS.forEach((c, k) => { const x = 170 + k * chipW; const label = c === 'Hint' ? 'HINT' : c === 'Shuffle' ? 'SHUF' : c.toUpperCase(); rr(x + 2, 14, chipW - 4, 32, 8, 'rgba(255,248,234,.12)'); ctx.textAlign = 'center'; ctx.fillStyle = C.paper; ctx.font = `800 9px ${FB}`; ctx.fillText(label, x + chipW / 2, 28); if (c === 'Hint' || c === 'Shuffle') { ctx.fillStyle = '#9fb3cc'; ctx.font = `800 7px ${FB}`; ctx.fillText('\u2212' + (c === 'Hint' ? 10 : 30) * level(), x + chipW / 2, 40); } });
+    if (S.toastT > 0) { ctx.globalAlpha = Math.min(1, S.toastT * 3); ctx.fillStyle = S.toast.color; ctx.font = `26px ${FD}`; ctx.strokeStyle = C.ink; ctx.lineWidth = 5; ctx.textAlign = 'center'; ctx.strokeText(S.toast.text, W / 2, 90 - (0.9 - S.toastT) * 20); ctx.fillText(S.toast.text, W / 2, 90 - (0.9 - S.toastT) * 20); ctx.globalAlpha = 1; }
   }
   let last = performance.now();
   function frame(now) { const dt = Math.min(0.1, (now - last) / 1000); last = now; if (S.running) S.t += dt; if (S.toastT > 0) S.toastT -= dt; if (S.hintT > 0) S.hintT -= dt; render(); requestAnimationFrame(frame); }
