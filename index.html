@@ -192,15 +192,25 @@
     if (name) { layoutName = name; try { localStorage.setItem('cm_layout', name); } catch (e) {} }
     setLayout(layoutName);
     const kinds = dealRetry(dailySeed + NAMES.indexOf(layoutName) * 101, POS.map((_, i) => i));
-    S = { kinds, alive: new Set(POS.map((_, i) => i)), bank: [], t: 0, running: false, over: false, score: 0, last: 0, hint: null, hintT: 0, toast: null, toastT: 0, shuffles: 0, hints: 0, submitted: false, lost: false, unlockedNew: false };
+    S = { kinds, alive: new Set(POS.map((_, i) => i)), bank: [], t: 0, running: false, over: false, score: 0, last: 0, hint: null, hintT: 0, toast: null, toastT: 0, shuffles: 0, hints: 0, submitted: false, lost: false, unlockedNew: false, streak: 0, timeBonus: 0 };
   }
   const isFree = i => S.alive.has(i) && !above[i].some(j => S.alive.has(j)) && !(leftOf[i].some(j => S.alive.has(j)) && rightOf[i].some(j => S.alive.has(j)));
   function moves() { const f = [...S.alive].filter(isFree); const out = []; for (const a of f) { const b = S.bank.find(b => S.kinds[b] === S.kinds[a]); if (b !== undefined) out.push([a, b]); } for (let a = 0; a < f.length; a++) for (let b = a + 1; b < f.length; b++) if (S.kinds[f[a]] === S.kinds[f[b]]) out.push([f[a], f[b]]); return out; }
   function toast(text, color) { S.toast = { text, color }; S.toastT = 0.9; }
+  // Scoring: pairs are worth more on higher levels; a streak multiplier rewards sustained pace; the finish bonus
+  // scales with how far under par you are, so 21s vs 31s on a small board is a big gap, not 10 points.
+  const level = () => levelOf(layoutName);
+  const par = () => POS.length / 2 * 6; // seconds: 6s per pair
   function clearPair() {
-    const quick = S.t - S.last < 4; S.last = S.t; S.hint = null;
-    const gained = 10 + (quick ? 5 : 0); S.score += gained; toast('+' + gained + (quick ? ' quick' : ''), C.cash);
-    if (!S.alive.size && !S.bank.length) { S.running = false; S.over = true; S.score += Math.max(0, 300 - Math.floor(S.t)); if (levelOf(layoutName) >= unlocked && unlocked < NAMES.length) { unlocked = levelOf(layoutName) + 1; S.unlockedNew = true; try { localStorage.setItem('cm_unlocked', unlocked); } catch (e) {} } finish(); }
+    const gap = S.t - S.last; S.last = S.t; S.hint = null;
+    S.streak = gap < 5 ? Math.min(5, S.streak + 1) : 1;
+    const gained = 10 * level() * S.streak; S.score += gained; toast('+' + gained + (S.streak > 1 ? '  x' + S.streak : ''), C.cash);
+    if (!S.alive.size && !S.bank.length) {
+      S.running = false; S.over = true;
+      const p = par(), t = S.t; S.timeBonus = Math.round(Math.max(0, (p - t) / p) * 400 * level()); S.score += S.timeBonus;
+      if (level() >= unlocked && unlocked < NAMES.length) { unlocked = level() + 1; S.unlockedNew = true; try { localStorage.setItem('cm_unlocked', unlocked); } catch (e) {} }
+      finish();
+    }
     else if (!moves().length) toast('no moves: shuffle', C.sel);
   }
   function pick(i) {
@@ -212,7 +222,7 @@
     S.alive.delete(i); S.bank.push(i);
     if (S.bank.length >= BANK && !moves().length) { S.running = false; S.over = true; S.lost = true; finish(); }
   }
-  function doHint() { const p = moves(); if (!p.length) { toast('no moves: shuffle', C.sel); return; } S.hint = p[0]; S.hintT = 1.6; S.hints++; S.score = Math.max(0, S.score - 5); if (!S.running && !S.over) S.running = true; }
+  function doHint() { const p = moves(); if (!p.length) { toast('no moves: shuffle', C.sel); return; } S.hint = p[0]; S.hintT = 1.6; S.hints++; S.streak = 0; S.score = Math.max(0, S.score - 10 * level()); if (!S.running && !S.over) S.running = true; }
   function doShuffle() {
     const slots = [...S.alive]; if (slots.length < 1) return;
     const r = rng(dailySeed + 1000 * (S.shuffles + 1));
@@ -221,7 +231,7 @@
       slots.forEach((i, n) => S.kinds[i] = ks[n]);
       if (moves().length) break;
     }
-    S.hint = null; S.shuffles++; S.score = Math.max(0, S.score - 20); toast('shuffled', C.paper);
+    S.hint = null; S.shuffles++; S.streak = 0; S.score = Math.max(0, S.score - 30 * level()); toast('shuffled', C.paper);
   }
 
   // --- Leaderboard (Supabase REST) ---
