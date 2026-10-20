@@ -39,6 +39,13 @@
   td.s { text-align: right; font-family: var(--font-display); font-size: 18px; color: #1f5a46; }
   td.t { text-align: right; color: #8a8f99; font-size: 12px; width: 44px; }
   tr.me td { background: #fff3c4; }
+  .levels { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 8px; }
+  .levels button { border: 0; border-radius: 10px; padding: 8px 2px 6px; background: #e9e3d6; color: #5a6273; cursor: pointer; font: 800 9px var(--font-body); line-height: 1.2; }
+  .levels button b { display: block; font-family: var(--font-display); font-weight: 400; font-size: 18px; color: var(--ink); }
+  .levels button[aria-selected="true"] { background: var(--sel); color: var(--ink); }
+  .levels button[aria-selected="true"] b { color: var(--ink); }
+  .levels button:disabled { opacity: .4; cursor: default; }
+  .levels button:focus-visible { outline: 3px solid var(--ink); outline-offset: 1px; }
   .empty { text-align: center; color: #8a8f99; padding: 18px 0; font-weight: 700; }
 </style>
 </head>
@@ -50,10 +57,7 @@
     <div style="font-family:var(--font-display);font-size:13px;letter-spacing:2px;color:#8a8f99">DAILY TILE PUZZLE</div>
     <h2 style="font-size:40px;margin:4px 0 2px">City Mahjong</h2>
     <p id="homeDay">Same board for everyone today.</p>
-    <div class="tabs" role="tablist" aria-label="Layout" style="margin-top:6px">
-      <button type="button" role="tab" id="homeTurtle" aria-selected="true">TURTLE</button>
-      <button type="button" role="tab" id="homeTowers" aria-selected="false">TOWERS</button>
-    </div>
+    <div class="levels" id="levels" role="listbox" aria-label="Level"></div>
     <button class="btn" type="button" id="homePlay">PLAY</button>
     <button class="btn quiet" type="button" id="homeBoard">Leaderboard</button>
     <button class="btn quiet" type="button" id="homeName">Playing as: <span id="homeWho">?</span></button>
@@ -90,7 +94,8 @@
     <h2 id="winTitle">Cleared!</h2>
     <p id="winLine"></p>
     <p id="winRank" style="color:#1f5a46"></p>
-    <button class="btn" type="button" id="winBoard">See the leaderboard</button>
+    <button class="btn" type="button" id="winNext">Next level</button>
+    <button class="btn quiet" type="button" id="winBoard">See the leaderboard</button>
     <button class="btn quiet" type="button" id="winAgain">Play again</button>
     <button class="btn quiet" type="button" id="winHome">Home</button>
   </div>
@@ -111,14 +116,16 @@
   const KINDS = [];
   for (const suit of ['bus', 'cab', 'park']) for (let n = 1; n <= 9; n++) KINDS.push({ suit, n });
   const faceImgs = FACES.map(src => { const im = new Image(); im.src = src; return im; });
-  faceImgs.forEach((im, i) => KINDS.push({ suit: 'face', n: i }));
+  const FACE_NAMES = ['', '', '', '', '', '', 'Iain'];
+  faceImgs.forEach((im, i) => KINDS.push({ suit: 'face', n: i, who: FACE_NAMES[i] || 'Family ' + (i + 1) }));
   // Photos people uploaded in Stair Cleaning live with their scores; pull them in as extra face tiles.
   async function loadUploadedFaces() {
     try {
       const res = await fetch('https://zmxkxxlvaewwwqgrphlk.supabase.co/rest/v1/stair_cleaning_scores?select=player,photo,device_id,updated_at&photo=not.is.null&face=eq.-1&order=updated_at.desc&limit=300', { headers: { apikey: 'sb_publishable_Opzos_yWd8FFPS1nATl5_Q_NZZay9fm', Authorization: 'Bearer sb_publishable_Opzos_yWd8FFPS1nATl5_Q_NZZay9fm' } });
       if (!res.ok) return 0;
       const rows = await res.json(); const latest = {};
-      for (const r of rows) { if (!r.photo || !/^data:image\//.test(r.photo) || r.photo.length > 60000) continue; const k = (r.device_id || '') + '|' + String(r.player || '').trim().toLowerCase(); if (!latest[k]) latest[k] = r; }
+      const seenPhoto = new Set(FACES);
+      for (const r of rows) { if (!r.photo || !/^data:image\//.test(r.photo) || r.photo.length > 60000 || seenPhoto.has(r.photo)) continue; const k = (r.device_id || '') + '|' + String(r.player || '').trim().toLowerCase(); if (!latest[k]) { latest[k] = r; seenPhoto.add(r.photo); } }
       const extra = Object.values(latest).sort((a, b) => a.player.localeCompare(b.player)).slice(0, 9);
       const loaded = await Promise.all(extra.map(r => new Promise(res => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = r.photo; })));
       loaded.forEach((im, i) => { if (im && im.naturalWidth) { faceImgs.push(im); KINDS.push({ suit: 'face', n: faceImgs.length - 1, who: extra[i].player }); } });
@@ -128,18 +135,18 @@
 
   // --- Layouts: half-tile units, a tile is 2 by 2. ---
   function block(x0, y0, cols, rows, z, out) { for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) out.push({ x: x0 + c * 2, y: y0 + r * 2, z }); return out; }
+  // Levels: tile count grows, shapes change, tiles stay big (never under 48px wide). x,y in half-tile units, z = layer.
   const LAYOUTS = {
-    Turtle: () => { // 32 big tiles
-      const p = []; const rows = [[1, 3], [0, 4], [0, 4], [0, 4], [1, 3]];
-      rows.forEach(([a, b], r) => { for (let c = a; c <= b; c++) p.push({ x: c * 2, y: r * 2, z: 0 }); });
-      block(2, 2, 3, 3, 1, p); block(3, 4, 2, 1, 2, p);
-      return p;
-    },
-    Towers: () => { // 28 big tiles
-      const p = []; block(0, 0, 2, 5, 0, p); block(6, 0, 2, 5, 0, p); block(4, 4, 1, 2, 0, p);
-      block(1, 2, 1, 3, 1, p); block(7, 2, 1, 3, 1, p);
-      return p;
-    }
+    'Bus Stop':  () => block(0, 0, 4, 4, 0, []),                                                                  // 16
+    'Terrace':   () => { const p = block(0, 0, 5, 4, 0, []); block(1, 1, 3, 2, 1, p); return p; },               // 26
+    'Towers':    () => { const p = []; block(0, 0, 2, 5, 0, p); block(6, 0, 2, 5, 0, p); block(4, 4, 1, 2, 0, p); block(1, 2, 1, 3, 1, p); block(7, 2, 1, 3, 1, p); return p; }, // 28
+    'Turtle':    () => { const p = []; [[1, 3], [0, 4], [0, 4], [0, 4], [1, 3]].forEach(([a, b], r) => { for (let c = a; c <= b; c++) p.push({ x: c * 2, y: r * 2, z: 0 }); }); block(2, 2, 3, 3, 1, p); block(3, 4, 2, 1, 2, p); return p; }, // 32
+    'Cross':     () => { const p = []; block(4, 0, 2, 6, 0, p); block(0, 4, 2, 2, 0, p); block(8, 4, 2, 2, 0, p); block(2, 2, 1, 4, 0, p); block(7, 2, 1, 4, 0, p); block(4, 2, 2, 2, 1, p); return p; }, // 36
+    'Bridge':    () => { const p = []; block(0, 0, 2, 6, 0, p); block(8, 0, 2, 6, 0, p); block(4, 2, 2, 4, 0, p); block(2, 4, 2, 2, 0, p); block(6, 4, 2, 2, 0, p); block(1, 2, 1, 2, 1, p); block(9, 2, 1, 2, 1, p); block(5, 3, 1, 2, 1, p); return p; }, // 46
+    'Fortress':  () => { const p = block(0, 0, 5, 6, 0, []); block(0, 0, 1, 1, 1, p); block(8, 0, 1, 1, 1, p); block(0, 10, 1, 1, 1, p); block(8, 10, 1, 1, 1, p); block(2, 2, 3, 4, 1, p); block(3, 4, 2, 2, 2, p); return p; }, // 50
+    'Big Turtle':() => { const p = []; [[1, 4], [0, 5], [0, 5], [0, 5], [0, 5], [1, 4]].forEach(([a, b], r) => { for (let c = a; c <= b; c++) p.push({ x: c * 2, y: r * 2, z: 0 }); }); block(2, 2, 4, 4, 1, p); block(3, 3, 3, 2, 2, p); block(4, 4, 2, 1, 3, p); return p; }, // 56
+    'Pyramid':   () => { const p = block(0, 0, 5, 6, 0, []); block(1, 1, 4, 5, 1, p); block(2, 2, 3, 4, 2, p); block(3, 3, 2, 3, 3, p); return p; }, // 68
+    'The City':  () => { const p = block(0, 0, 6, 6, 0, []); block(1, 1, 5, 5, 1, p); block(2, 2, 4, 4, 2, p); block(3, 3, 3, 3, 3, p); block(4, 4, 2, 2, 4, p); return p; } // 90
   };
   const NAMES = Object.keys(LAYOUTS);
 
@@ -150,7 +157,7 @@
     const minX = Math.min(...POS.map(p => p.x)), maxX = Math.max(...POS.map(p => p.x + 2)), minY = Math.min(...POS.map(p => p.y)), maxY = Math.max(...POS.map(p => p.y + 2)), maxZ = Math.max(...POS.map(p => p.z));
     const wHalf = maxX - minX, hHalf = maxY - minY;
     const availW = W - 20 - maxZ * 5, availH = BANK_Y - 18 - OY_TOP - maxZ * 6;
-    TW = Math.min(72, Math.floor(availW / (wHalf / 2)), Math.floor(availH / (hHalf / 2) / 1.35)); TH = Math.round(TW * 1.35); UX = TW / 2; UY = TH / 2;
+    TW = Math.min(64, Math.floor(availW / (wHalf / 2)), Math.floor(availH / (hHalf / 2) / 1.35)); TH = Math.round(TW * 1.35); UX = TW / 2; UY = TH / 2;
     ZX = Math.round(TW * 0.12); ZY = -Math.round(TH * 0.11);
     OX = (W - wHalf * UX - maxZ * ZX) / 2 - minX * UX; OY = OY_TOP + (availH - hHalf * UY) / 2 - minY * UY - maxZ * ZY;
     const overlaps = (a, b) => Math.abs(a.x - b.x) < 2 && Math.abs(a.y - b.y) < 2;
@@ -178,13 +185,14 @@
   // --- State ---
   const today = new Date(); const DAY = today.getUTCFullYear() + '-' + String(today.getUTCMonth() + 1).padStart(2, '0') + '-' + String(today.getUTCDate()).padStart(2, '0');
   const dailySeed = Number(DAY.replace(/-/g, ''));
-  let S, layoutName = 'Turtle', playerName = '';
-  try { playerName = localStorage.getItem('cm_name') || ''; layoutName = NAMES.includes(localStorage.getItem('cm_layout')) ? localStorage.getItem('cm_layout') : 'Turtle'; } catch (e) {}
+  let S, layoutName = NAMES[0], playerName = '', unlocked = 1;
+  try { playerName = localStorage.getItem('cm_name') || ''; unlocked = Math.max(1, Math.min(NAMES.length, Number(localStorage.getItem('cm_unlocked')) || 1)); const sv = localStorage.getItem('cm_layout'); layoutName = NAMES.includes(sv) && NAMES.indexOf(sv) < unlocked ? sv : NAMES[0]; } catch (e) {}
+  function levelOf(n) { return NAMES.indexOf(n) + 1; }
   function reset(name) {
     if (name) { layoutName = name; try { localStorage.setItem('cm_layout', name); } catch (e) {} }
     setLayout(layoutName);
     const kinds = dealRetry(dailySeed + NAMES.indexOf(layoutName) * 101, POS.map((_, i) => i));
-    S = { kinds, alive: new Set(POS.map((_, i) => i)), bank: [], t: 0, running: false, over: false, score: 0, last: 0, hint: null, hintT: 0, toast: null, toastT: 0, shuffles: 0, hints: 0, submitted: false, lost: false };
+    S = { kinds, alive: new Set(POS.map((_, i) => i)), bank: [], t: 0, running: false, over: false, score: 0, last: 0, hint: null, hintT: 0, toast: null, toastT: 0, shuffles: 0, hints: 0, submitted: false, lost: false, unlockedNew: false };
   }
   const isFree = i => S.alive.has(i) && !above[i].some(j => S.alive.has(j)) && !(leftOf[i].some(j => S.alive.has(j)) && rightOf[i].some(j => S.alive.has(j)));
   function moves() { const f = [...S.alive].filter(isFree); const out = []; for (const a of f) { const b = S.bank.find(b => S.kinds[b] === S.kinds[a]); if (b !== undefined) out.push([a, b]); } for (let a = 0; a < f.length; a++) for (let b = a + 1; b < f.length; b++) if (S.kinds[f[a]] === S.kinds[f[b]]) out.push([f[a], f[b]]); return out; }
@@ -192,7 +200,7 @@
   function clearPair() {
     const quick = S.t - S.last < 4; S.last = S.t; S.hint = null;
     const gained = 10 + (quick ? 5 : 0); S.score += gained; toast('+' + gained + (quick ? ' quick' : ''), C.cash);
-    if (!S.alive.size && !S.bank.length) { S.running = false; S.over = true; S.score += Math.max(0, 300 - Math.floor(S.t)); finish(); }
+    if (!S.alive.size && !S.bank.length) { S.running = false; S.over = true; S.score += Math.max(0, 300 - Math.floor(S.t)); if (levelOf(layoutName) >= unlocked && unlocked < NAMES.length) { unlocked = levelOf(layoutName) + 1; S.unlockedNew = true; try { localStorage.setItem('cm_unlocked', unlocked); } catch (e) {} } finish(); }
     else if (!moves().length) toast('no moves: shuffle', C.sel);
   }
   function pick(i) {
@@ -252,7 +260,7 @@
     if (S.lost) {
       document.getElementById('winTitle').textContent = 'Bank full';
       document.getElementById('winLine').textContent = 'Four tiles banked and no match left. ' + S.alive.size + ' tiles still on the board.';
-      document.getElementById('winRank').textContent = 'No score this time.'; winSheet.hidden = false; return;
+      document.getElementById('winRank').textContent = 'No score this time.'; document.getElementById('winNext').hidden = true; winSheet.hidden = false; return;
     }
     document.getElementById('winTitle').textContent = S.score + ' points';
     document.getElementById('winLine').textContent = layoutName + ' cleared in ' + Math.floor(S.t) + 's · ' + S.hints + ' hints · ' + S.shuffles + ' shuffles';
@@ -263,14 +271,19 @@
   document.getElementById('winBoard').addEventListener('click', () => { winSheet.hidden = true; scope = 'today'; document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-selected', x.dataset.scope === 'today')); showBoard(); });
   document.getElementById('winAgain').addEventListener('click', () => { winSheet.hidden = true; reset(); });
   const homeSheet = document.getElementById('homeSheet');
-  function syncHome() { document.getElementById('homeTurtle').setAttribute('aria-selected', layoutName === 'Turtle'); document.getElementById('homeTowers').setAttribute('aria-selected', layoutName === 'Towers'); document.getElementById('homeWho').textContent = playerName || 'tap to set'; document.getElementById('homeDay').textContent = 'Same board for everyone today, ' + DAY.slice(8) + '/' + DAY.slice(5, 7) + '.'; }
+  const levelsEl = document.getElementById('levels');
+  function syncHome() {
+    levelsEl.innerHTML = '';
+    NAMES.forEach((n, i) => { const b = document.createElement('button'); b.type = 'button'; b.setAttribute('role', 'option'); b.setAttribute('aria-selected', n === layoutName); b.disabled = i >= unlocked; b.innerHTML = '<b>' + (i + 1) + '</b>' + (i >= unlocked ? '\uD83D\uDD12' : LAYOUTS[n]().length + ' tiles'); b.title = n; b.addEventListener('click', () => { if (i < unlocked) { reset(n); syncHome(); } }); levelsEl.appendChild(b); });
+    document.getElementById('homeWho').textContent = playerName || 'tap to set';
+    document.getElementById('homeDay').textContent = 'Level ' + levelOf(layoutName) + ' \u00b7 ' + layoutName + ' \u00b7 ' + LAYOUTS[layoutName]().length + ' tiles. Same board for everyone today.';
+  }
   function goHome() { winSheet.hidden = true; boardSheet.hidden = true; reset(); syncHome(); homeSheet.hidden = false; }
-  document.getElementById('homeTurtle').addEventListener('click', () => { reset('Turtle'); syncHome(); });
-  document.getElementById('homeTowers').addEventListener('click', () => { reset('Towers'); syncHome(); });
   document.getElementById('homePlay').addEventListener('click', () => { if (!playerName) { askName(); return; } homeSheet.hidden = true; });
   document.getElementById('homeBoard').addEventListener('click', () => { scope = 'today'; showBoard(); });
   document.getElementById('homeName').addEventListener('click', () => askName());
   document.getElementById('winHome').addEventListener('click', goHome);
+  document.getElementById('winNext').addEventListener('click', () => { const i = levelOf(layoutName); if (i < NAMES.length && i < unlocked) { winSheet.hidden = true; reset(NAMES[i]); } else goHome(); });
 
   // --- Input ---
   const CHIPS = ['Home', 'Hint', 'Shuffle', 'Board']; const chipW = (W - 24) / CHIPS.length;
@@ -295,10 +308,11 @@
     const cx = 20;
     if (k.suit === 'face') {
       const im = faceImgs[k.n];
-      ctx.save(); ctx.beginPath(); ctx.roundRect(3, 3, 34, 48, 4); ctx.clip();
-      if (im.complete && im.naturalWidth) { const s = Math.max(34 / im.naturalWidth, 48 / im.naturalHeight); const w = im.naturalWidth * s, h = im.naturalHeight * s; ctx.drawImage(im, 3 + (34 - w) / 2, 3 + (48 - h) / 2, w, h); }
-      else { ctx.fillStyle = '#d9d2c3'; ctx.fillRect(3, 3, 34, 48); ctx.fillStyle = '#8a7352'; ctx.font = `20px ${FD}`; ctx.textAlign = 'center'; ctx.fillText('?', 20, 34); }
-      ctx.restore(); return;
+      ctx.save(); ctx.beginPath(); ctx.roundRect(3, 3, 34, 40, 4); ctx.clip();
+      if (im.complete && im.naturalWidth) { const s = Math.max(34 / im.naturalWidth, 40 / im.naturalHeight); const w = im.naturalWidth * s, h = im.naturalHeight * s; ctx.drawImage(im, 3 + (34 - w) / 2, 3 + (40 - h) / 2, w, h); }
+      else { ctx.fillStyle = '#d9d2c3'; ctx.fillRect(3, 3, 34, 40); ctx.fillStyle = '#8a7352'; ctx.font = `20px ${FD}`; ctx.textAlign = 'center'; ctx.fillText('?', 20, 30); }
+      ctx.restore();
+      ctx.fillStyle = C.ink; ctx.font = `800 6.5px ${FB}`; ctx.textAlign = 'center'; ctx.fillText(String(k.who || '').slice(0, 9).toUpperCase(), 20, 50); return;
     }
     const color = k.suit === 'bus' ? '#d12b2b' : k.suit === 'cab' ? '#1f232c' : '#2f8f4e';
     ctx.fillStyle = color; ctx.font = `24px ${FD}`; ctx.textAlign = 'center'; ctx.fillText(k.n, cx, 25);
