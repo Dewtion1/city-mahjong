@@ -398,13 +398,13 @@
   document.getElementById('winNext').addEventListener('click', () => { const i = levelOf(layoutName); if (i < NAMES.length && i < unlocked) { winSheet.hidden = true; reset(NAMES[i]); } else goHome(); });
 
   // --- Input ---
-  const CHIPS = ['Home', 'Hint', 'Undo', 'Shuffle', 'Board']; const CHIP_X = 148; const chipW = (W - CHIP_X - 8) / CHIPS.length;
+  const CHIPS = ['Home', 'Hint', 'Undo', 'Shuffle']; const CHIP_X = 180; const chipW = (W - CHIP_X - 8) / CHIPS.length;
   canvas.addEventListener('pointerup', e => {
     const rect = canvas.getBoundingClientRect(), sx = (e.clientX - rect.left) * W / rect.width, sy = (e.clientY - rect.top) * H / rect.height;
     if (S.over) return;
     if (sy > 8 && sy < 52 && sx > CHIP_X) {
       const n = Math.floor((sx - CHIP_X) / chipW); const c = CHIPS[n];
-      if (c === 'Home') goHome(); else if (c === 'Hint') doHint(); else if (c === 'Undo') doUndo(); else if (c === 'Shuffle') doShuffle(); else if (c === 'Board') showBoard();
+      if (c === 'Home') goHome(); else if (c === 'Hint') doHint(); else if (c === 'Undo') doUndo(); else if (c === 'Shuffle') doShuffle();
       return;
     }
     if (sy > BANK_Y - 6 && sy < BANK_Y + BTH + 6) return;
@@ -454,6 +454,14 @@
       else tileBody(x, BANK_Y, S.bank[s], S.hint && S.hint.includes(S.bank[s]) && S.hintT > 0, true, false, BTW, BTH, 0, 0);
     }
   }
+  // Line icons for the banner buttons, drawn with the current stroke/fill style, centred on (cx, cy).
+  function icon(name, cx, cy) {
+    ctx.beginPath();
+    if (name === 'Home') { ctx.moveTo(cx - 7, cy + 1); ctx.lineTo(cx, cy - 6); ctx.lineTo(cx + 7, cy + 1); ctx.moveTo(cx - 5, cy); ctx.lineTo(cx - 5, cy + 7); ctx.lineTo(cx + 5, cy + 7); ctx.lineTo(cx + 5, cy); ctx.stroke(); }
+    else if (name === 'Hint') { ctx.arc(cx, cy - 2, 5, Math.PI * 0.8, Math.PI * 2.2); ctx.stroke(); ctx.beginPath(); ctx.moveTo(cx - 3, cy + 5); ctx.lineTo(cx + 3, cy + 5); ctx.moveTo(cx - 2, cy + 8); ctx.lineTo(cx + 2, cy + 8); ctx.stroke(); }
+    else if (name === 'Undo') { ctx.arc(cx + 1, cy + 1, 6, -Math.PI * 0.9, Math.PI * 0.5); ctx.stroke(); ctx.beginPath(); ctx.moveTo(cx - 8, cy - 5); ctx.lineTo(cx - 4, cy - 1); ctx.lineTo(cx - 8, cy + 2); ctx.closePath(); ctx.fill(); }
+    else if (name === 'Shuffle') { ctx.moveTo(cx - 8, cy - 4); ctx.lineTo(cx - 3, cy - 4); ctx.lineTo(cx + 3, cy + 4); ctx.lineTo(cx + 8, cy + 4); ctx.moveTo(cx - 8, cy + 4); ctx.lineTo(cx - 3, cy + 4); ctx.lineTo(cx + 3, cy - 4); ctx.lineTo(cx + 8, cy - 4); ctx.stroke(); ctx.beginPath(); ctx.moveTo(cx + 6, cy - 7); ctx.lineTo(cx + 9, cy - 4); ctx.lineTo(cx + 6, cy - 1); ctx.moveTo(cx + 6, cy + 1); ctx.lineTo(cx + 9, cy + 4); ctx.lineTo(cx + 6, cy + 7); ctx.stroke(); }
+  }
   function render() {
     ctx.fillStyle = C.felt; ctx.fillRect(0, 0, W, H);
     ctx.fillStyle = C.feltDark; for (let y = 0; y < H; y += 24) for (let x = (y / 24 % 2) * 12; x < W; x += 24) ctx.fillRect(x, y, 2, 2);
@@ -463,9 +471,9 @@
     drawFx();
     rr(8, 8, W - 16, 44, 12, 'rgba(22,26,36,.9)');
     ctx.textAlign = 'left'; ctx.fillStyle = C.cash; ctx.font = `20px ${FD}`; ctx.fillText(S.score, 16, 38);
-    ctx.textAlign = 'center'; ctx.fillStyle = '#9fb3cc'; ctx.font = `800 7px ${FB}`; ctx.fillText('L' + level() + ' ' + layoutName.toUpperCase().slice(0, 12), 104, 24);
-    ctx.fillStyle = C.paper; ctx.font = `800 9px ${FB}`; ctx.fillText(S.alive.size + ' left \u00b7 ' + Math.floor(S.t) + 's', 104, 40);
-    CHIPS.forEach((c, k) => { const x = CHIP_X + k * chipW; const label = c === 'Shuffle' ? 'SHUF' : c === 'Board' ? 'TOP' : c.toUpperCase(); const dim = c === 'Undo' && !S.history.length; rr(x + 2, 14, chipW - 4, 32, 8, 'rgba(255,248,234,.12)'); ctx.textAlign = 'center'; ctx.fillStyle = dim ? 'rgba(255,248,234,.4)' : C.paper; ctx.font = `800 8px ${FB}`; ctx.fillText(label, x + chipW / 2, 28); const cost = c === 'Hint' ? 10 : c === 'Undo' ? 20 : c === 'Shuffle' ? 30 : 0; if (cost) { ctx.fillStyle = '#9fb3cc'; ctx.font = `800 7px ${FB}`; ctx.fillText('\u2212' + cost * level(), x + chipW / 2, 40); } });
+    ctx.textAlign = 'center'; ctx.fillStyle = '#9fb3cc'; ctx.font = `800 7px ${FB}`; ctx.fillText('L' + level() + ' ' + layoutName.toUpperCase().slice(0, 14), 118, 24);
+    ctx.fillStyle = C.paper; ctx.font = `800 9px ${FB}`; ctx.fillText(S.alive.size + ' left \u00b7 ' + Math.floor(S.t) + 's', 118, 40);
+    CHIPS.forEach((c, k) => { const x = CHIP_X + k * chipW, cx = x + chipW / 2; const dim = c === 'Undo' && !S.history.length; rr(x + 2, 12, chipW - 4, 36, 9, 'rgba(255,248,234,.12)'); ctx.strokeStyle = ctx.fillStyle = dim ? 'rgba(255,248,234,.35)' : C.paper; ctx.lineWidth = 2; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; icon(c, cx, 25); const cost = c === 'Hint' ? 10 : c === 'Undo' ? 20 : c === 'Shuffle' ? 30 : 0; if (cost) { ctx.fillStyle = dim ? 'rgba(159,179,204,.4)' : '#9fb3cc'; ctx.font = `800 7px ${FB}`; ctx.textAlign = 'center'; ctx.fillText('\u2212' + cost * level(), cx, 44); } });
     if (S.toastT > 0) { ctx.globalAlpha = Math.min(1, S.toastT * 3); ctx.fillStyle = S.toast.color; ctx.font = `26px ${FD}`; ctx.strokeStyle = C.ink; ctx.lineWidth = 5; ctx.textAlign = 'center'; ctx.strokeText(S.toast.text, W / 2, 90 - (0.9 - S.toastT) * 20); ctx.fillText(S.toast.text, W / 2, 90 - (0.9 - S.toastT) * 20); ctx.globalAlpha = 1; }
   }
   let last = performance.now();
