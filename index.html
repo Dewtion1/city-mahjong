@@ -322,7 +322,7 @@
       if (im.complete && im.naturalWidth) { const s = Math.max(34 / im.naturalWidth, 40 / im.naturalHeight); const w = im.naturalWidth * s, h = im.naturalHeight * s; ctx.drawImage(im, 3 + (34 - w) / 2, 3 + (40 - h) / 2, w, h); }
       else { ctx.fillStyle = '#d9d2c3'; ctx.fillRect(3, 3, 34, 40); ctx.fillStyle = '#8a7352'; ctx.font = `20px ${FD}`; ctx.textAlign = 'center'; ctx.fillText('?', 20, 30); }
       ctx.restore();
-      ctx.fillStyle = C.ink; ctx.font = `800 6.5px ${FB}`; ctx.textAlign = 'center'; ctx.fillText(String(k.who || '').slice(0, 9).toUpperCase(), 20, 50); return;
+      ctx.fillStyle = C.ink; ctx.font = `800 6.5px ${FB}`; ctx.textAlign = 'center'; ctx.font = `800 8px ${FB}`; ctx.fillText('#' + (k.n + 1), 20, 50); return;
     }
     const color = k.suit === 'bus' ? '#d12b2b' : k.suit === 'cab' ? '#1f232c' : '#2f8f4e';
     ctx.fillStyle = color; ctx.font = `24px ${FD}`; ctx.textAlign = 'center'; ctx.fillText(k.n, cx, 25);
