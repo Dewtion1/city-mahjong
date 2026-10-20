@@ -97,9 +97,9 @@
     <h2>Leaderboard</h2>
     <p id="boardSub">Today · Turtle</p>
     <div class="tabs" role="tablist">
-      <button type="button" role="tab" aria-selected="true" data-scope="today">TODAY</button>
-      <button type="button" role="tab" aria-selected="false" data-scope="week">THIS WEEK</button>
-      <button type="button" role="tab" aria-selected="false" data-scope="all">ALL TIME</button>
+      <button type="button" role="tab" aria-selected="true" data-scope="total">OVERALL</button>
+      <button type="button" role="tab" aria-selected="false" data-scope="today">TODAY</button>
+      <button type="button" role="tab" aria-selected="false" data-scope="all">THIS LEVEL</button>
     </div>
     <div id="boardBody"><div class="empty">Loading…</div></div>
     <button class="btn quiet" type="button" id="boardClose">Back to the game</button>
@@ -299,13 +299,14 @@
     try { await fetch(SUPA_URL + '/rest/v1/city_mahjong_scores', { method: 'POST', headers: Object.assign({ Prefer: 'return=minimal' }, headers), body: JSON.stringify({ name: playerName, layout: layoutName, day: DAY, score: S.score, seconds: Math.floor(S.t) }) }); } catch (e) {}
   }
   async function fetchBoard(scope) {
-    let q = SUPA_URL + '/rest/v1/city_mahjong_scores?select=name,score,seconds,day&layout=eq.' + layoutName + '&order=score.desc,seconds.asc&limit=10';
+    if (scope === 'total') { const res = await fetch(SUPA_URL + '/rest/v1/city_mahjong_totals?select=name,total,levels&order=total.desc&limit=20', { headers }); if (!res.ok) throw new Error('board'); return res.json(); }
+    let q = SUPA_URL + '/rest/v1/city_mahjong_scores?select=name,score,seconds,day&layout=eq.' + encodeURIComponent(layoutName) + '&order=score.desc,seconds.asc&limit=10';
     if (scope === 'today') q += '&day=eq.' + DAY;
     if (scope === 'week') { const d = new Date(today); d.setUTCDate(d.getUTCDate() - 6); q += '&day=gte.' + d.toISOString().slice(0, 10); }
     const res = await fetch(q, { headers }); if (!res.ok) throw new Error('board'); return res.json();
   }
   const boardSheet = document.getElementById('boardSheet'), boardBody = document.getElementById('boardBody'), boardSub = document.getElementById('boardSub');
-  let scope = 'today';
+  let scope = 'total';
   async function showBoard() {
     boardSheet.hidden = false; boardSub.textContent = (scope === 'today' ? 'Today' : scope === 'week' ? 'This week' : 'All time') + ' · ' + layoutName;
     boardBody.innerHTML = '<div class="empty">Loading…</div>';
@@ -313,7 +314,9 @@
       const rows = await fetchBoard(scope);
       if (!rows.length) { boardBody.innerHTML = '<div class="empty">No scores yet. Be the first.</div>'; return; }
       const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-      boardBody.innerHTML = '<table>' + rows.map((r, i) => `<tr class="${r.name === playerName ? 'me' : ''}"><td class="n">${i + 1}</td><td>${esc(r.name)}</td><td class="t">${r.seconds}s</td><td class="s">${r.score}</td></tr>`).join('') + '</table>';
+      boardBody.innerHTML = '<table>' + rows.map((r, i) => scope === 'total'
+        ? `<tr class="${r.name === playerName ? 'me' : ''}"><td class="n">${i + 1}</td><td>${esc(r.name)}</td><td class="t">${r.levels} lvl${r.levels === 1 ? '' : 's'}</td><td class="s">${r.total}</td></tr>`
+        : `<tr class="${r.name === playerName ? 'me' : ''}"><td class="n">${i + 1}</td><td>${esc(r.name)}</td><td class="t">${r.seconds}s</td><td class="s">${r.score}</td></tr>`).join('') + '</table>';
     } catch (e) { boardBody.innerHTML = '<div class="empty">Couldn\'t reach the leaderboard. Try again in a moment.</div>'; }
   }
   document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => { document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-selected', x === b)); scope = b.dataset.scope; showBoard(); }));
@@ -351,7 +354,7 @@
     await submitScore();
     try { const rows = await fetchBoard('today'); const rank = rows.findIndex(r => r.name === playerName && r.score === S.score) + 1; if (rank) document.getElementById('winRank').textContent = rank === 1 ? 'Top of today\'s board!' : '#' + rank + ' today'; } catch (e) {}
   }
-  document.getElementById('winBoard').addEventListener('click', () => { winSheet.hidden = true; scope = 'today'; document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-selected', x.dataset.scope === 'today')); showBoard(); });
+  document.getElementById('winBoard').addEventListener('click', () => { winSheet.hidden = true; scope = 'total'; document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-selected', x.dataset.scope === 'total')); showBoard(); });
   document.getElementById('winAgain').addEventListener('click', () => { winSheet.hidden = true; reset(); });
   const homeSheet = document.getElementById('homeSheet');
   const levelsEl = document.getElementById('levels');
@@ -365,7 +368,7 @@
   }
   function goHome() { winSheet.hidden = true; boardSheet.hidden = true; reset(); syncHome(); homeSheet.hidden = false; }
   document.getElementById('homePlay').addEventListener('click', () => { if (!playerName) { askName(null); return; } homeSheet.hidden = true; });
-  document.getElementById('homeBoard').addEventListener('click', () => { scope = 'today'; showBoard(); });
+  document.getElementById('homeBoard').addEventListener('click', () => { scope = 'total'; document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-selected', x.dataset.scope === 'total')); showBoard(); });
   document.getElementById('winHome').addEventListener('click', goHome);
   document.getElementById('winNext').addEventListener('click', () => { const i = levelOf(layoutName); if (i < NAMES.length && i < unlocked) { winSheet.hidden = true; reset(NAMES[i]); } else goHome(); });
 
