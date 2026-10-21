@@ -203,17 +203,11 @@
   const C = { ivory: '#efe5cf', muted: '#cbd6c8', brass: '#e3c67a', brass2: '#b48f36', ink: '#2b2419', red: '#a8463c', tile: '#f0e4ca', cash: '#e3c67a', sel: '#e3c67a', accent: '#d9705f', paper: '#efe5cf' };
   function rng(seed) { let s = seed >>> 0 || 1; return () => { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; }; }
 
-  // --- Tile kinds: the classic 42 (dots, bamboo, characters, winds, dragons, flowers, seasons) so every pair on an 84-tile board is unique, plus family faces. ---
+  // --- Tile kinds: 42 so every pair on an 84-tile board is unique — dots 1-9, bamboo 1-9, numbers 1-9 and 15 picture tiles — plus family faces. ---
   const KINDS = [];
-  const CN = ['一', '二', '三', '四', '五', '六', '七', '八', '九'];
-  for (const suit of ['dot', 'bam', 'char']) for (let n = 1; n <= 9; n++) KINDS.push({ suit, n });
-  const HONOURS = [
-    ['wind', '東', 'EAST', '#2b2419'], ['wind', '南', 'SOUTH', '#2b2419'], ['wind', '西', 'WEST', '#2b2419'], ['wind', '北', 'NORTH', '#2b2419'],
-    ['dragon', '中', 'RED', '#d9342b'], ['dragon', '發', 'GREEN', '#3f8f45'], ['dragon', '', 'WHITE', '#2b5fa8'],
-    ['flower', '梅', 'PLUM', '#c23b6f'], ['flower', '蘭', 'ORCHID', '#c23b6f'], ['flower', '菊', 'MUM', '#c23b6f'], ['flower', '竹', 'BAMBOO', '#c23b6f'],
-    ['season', '春', 'SPRING', '#2b7fa8'], ['season', '夏', 'SUMMER', '#2b7fa8'], ['season', '秋', 'AUTUMN', '#2b7fa8'], ['season', '冬', 'WINTER', '#2b7fa8'],
-  ];
-  HONOURS.forEach(([suit, ch, label, color], i) => KINDS.push({ suit, n: i, ch, label, color }));
+  for (const suit of ['dot', 'bam', 'num']) for (let n = 1; n <= 9; n++) KINDS.push({ suit, n });
+  const PICS = ['lantern', 'fish', 'rice', 'teapot', 'dumpling', 'chilli', 'fan', 'sun', 'moon', 'star', 'cloud', 'leaf', 'flower', 'heart', 'cherry'];
+  PICS.forEach((pic, i) => KINDS.push({ suit: 'pic', n: i, pic }));
   const SUIT_KINDS = KINDS.length; // 42
   const faceImgs = FACES.map(src => { const im = new Image(); im.src = src; return im; });
   const FACE_NAMES = ['', '', '', '', '', '', 'Iain'];
@@ -551,39 +545,55 @@
 
   // --- Drawing: the tile spec from the design, base unit u = width / 10 ---
   function rr(x, y, w, h, r, fill) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); ctx.fillStyle = fill; ctx.fill(); }
-  const INK = '#2b2419', LIGHT = '#f3e8d0', CJK = "'PingFang SC', 'Hiragino Sans GB', 'Noto Sans CJK SC', 'Noto Sans SC', 'Microsoft YaHei', 'Heiti SC', sans-serif";
-  const DOT_COL = ['#2b5fa8', '#3f8f45', '#d9342b'];
-  // Classic dot and bamboo arrangements on a 3-column grid (col, row); rows is the grid height.
+  const INK = '#2b2419', LIGHT = '#f3e8d0';
+  const DOT_COL = '#a3242b', BAM_COL = '#1f4f9c', NUM_COL = '#2f6b4a';
+  // Classic dot and bamboo arrangements on a 3-column grid (col, row).
   const DOTS = { 1: [[1, 1]], 2: [[1, 0], [1, 2]], 3: [[0, 0], [1, 1], [2, 2]], 4: [[0, 0], [2, 0], [0, 2], [2, 2]], 5: [[0, 0], [2, 0], [1, 1], [0, 2], [2, 2]], 6: [[0, 0], [2, 0], [0, 1], [2, 1], [0, 2], [2, 2]], 7: [[0, 0], [1, 0.5], [2, 1], [0, 2], [2, 2], [0, 3], [2, 3]], 8: [[0, 0], [2, 0], [0, 1], [2, 1], [0, 2], [2, 2], [0, 3], [2, 3]], 9: [[0, 0], [1, 0], [2, 0], [0, 1], [1, 1], [2, 1], [0, 2], [1, 2], [2, 2]] };
   const BAMS = { 1: [[1, 1]], 2: [[1, 0], [1, 2]], 3: [[1, 0], [0, 2], [2, 2]], 4: [[0, 0], [2, 0], [0, 2], [2, 2]], 5: [[0, 0], [2, 0], [1, 1], [0, 2], [2, 2]], 6: [[0, 0], [1, 0], [2, 0], [0, 2], [1, 2], [2, 2]], 7: [[1, 0], [0, 1], [1, 1], [2, 1], [0, 2], [1, 2], [2, 2]], 8: [[0, 0], [1, 0], [2, 0], [0, 1], [2, 1], [0, 2], [1, 2], [2, 2]], 9: [[0, 0], [1, 0], [2, 0], [0, 1], [1, 1], [2, 1], [0, 2], [1, 2], [2, 2]] };
-  function dot(cx, cy, r, col) {
-    ctx.fillStyle = col; ctx.beginPath(); ctx.arc(cx, cy, r, 0, 7); ctx.fill();
-    ctx.strokeStyle = INK; ctx.lineWidth = Math.max(0.6, r * 0.18); ctx.stroke();
-    ctx.fillStyle = LIGHT; ctx.beginPath(); ctx.arc(cx, cy, r * 0.42, 0, 7); ctx.fill();
-    ctx.fillStyle = col; ctx.beginPath(); ctx.arc(cx, cy, r * 0.18, 0, 7); ctx.fill();
+  function dot(cx, cy, r) {
+    ctx.fillStyle = DOT_COL; ctx.beginPath(); ctx.arc(cx, cy, r, 0, 7); ctx.fill();
+    ctx.fillStyle = LIGHT; ctx.beginPath(); ctx.arc(cx, cy, r * 0.5, 0, 7); ctx.fill();
+    ctx.fillStyle = DOT_COL; ctx.beginPath(); ctx.arc(cx, cy, r * 0.22, 0, 7); ctx.fill();
   }
   function stick(cx, cy, sw, sh) {
-    ctx.fillStyle = '#3f8f45'; ctx.strokeStyle = INK; ctx.lineWidth = Math.max(0.6, sw * 0.14);
-    ctx.beginPath(); ctx.roundRect(cx - sw / 2, cy - sh / 2, sw, sh, sw * 0.35); ctx.fill(); ctx.stroke();
-    ctx.fillStyle = LIGHT; ctx.fillRect(cx - sw / 2 + sw * 0.15, cy - sw * 0.14, sw * 0.7, sw * 0.28);
+    ctx.fillStyle = BAM_COL; ctx.beginPath(); ctx.roundRect(cx - sw / 2, cy - sh / 2, sw, sh, sw * 0.3); ctx.fill();
+    ctx.fillStyle = LIGHT; ctx.fillRect(cx - sw / 2, cy - sh * 0.18, sw, sh * 0.1); ctx.fillRect(cx - sw / 2, cy + sh * 0.1, sw, sh * 0.1);
   }
-  // Draw the suit mark for a numbered kind inside box (bx, by, bw, bh).
-  function suitMark(k, bx, by, bw, bh, u) {
+  function suitMark(k, bx, by, bw, bh) {
     if (k.suit === 'dot') {
-      const pts = DOTS[k.n], rows = k.n >= 7 ? 4 : 3, cell = Math.min(bw / 3, bh / rows), r = cell * (k.n === 1 ? 0.95 : 0.4);
+      const pts = DOTS[k.n], rows = k.n >= 7 ? 4 : 3, cell = Math.min(bw / 3, bh / rows), r = cell * (k.n === 1 ? 1.15 : 0.46);
       const ox = bx + (bw - cell * 3) / 2 + cell / 2, oy = by + (bh - cell * rows) / 2 + cell / 2;
-      pts.forEach(([c, rw], i) => dot(ox + c * cell, oy + rw * cell, r, k.n === 1 ? '#3f8f45' : DOT_COL[(i + k.n) % 3]));
-      if (k.n === 1) { ctx.strokeStyle = '#d9342b'; ctx.lineWidth = Math.max(0.8, r * 0.16); ctx.beginPath(); ctx.arc(ox + cell, oy + cell, r * 0.66, 0, 7); ctx.stroke(); }
-    } else if (k.suit === 'bam') {
-      const pts = BAMS[k.n], cell = Math.min(bw / 3, bh / 3), sw = cell * 0.52, sh = k.n === 1 ? bh * 0.9 : cell * 0.96;
+      pts.forEach(([c, rw]) => dot(ox + c * cell, oy + rw * cell, r));
+      if (k.n === 1) { ctx.strokeStyle = LIGHT; ctx.lineWidth = r * 0.1; ctx.beginPath(); ctx.arc(ox + cell, oy + cell, r * 0.78, 0, 7); ctx.stroke(); }
+    } else {
+      const pts = BAMS[k.n], cell = Math.min(bw / 3, bh / 3), sw = cell * 0.52, sh = cell * 0.98;
       const ox = bx + (bw - cell * 3) / 2 + cell / 2, oy = by + (bh - cell * 3) / 2 + cell / 2;
-      pts.forEach(([c, rw]) => stick(ox + c * cell, oy + rw * cell, k.n === 1 ? sw * 1.5 : sw, sh));
-    } else { // characters: Chinese numeral over a red 萬
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillStyle = INK; ctx.font = `700 ${bh * 0.42}px ${CJK}`; ctx.fillText(CN[k.n - 1], bx + bw / 2, by + bh * 0.26);
-      ctx.fillStyle = '#d9342b'; ctx.font = `700 ${bh * 0.5}px ${CJK}`; ctx.fillText('萬', bx + bw / 2, by + bh * 0.72);
-      ctx.textBaseline = 'alphabetic';
+      if (k.n === 1) stick(ox + cell, oy + cell, cell * 0.8, bh * 0.92); else pts.forEach(([c, rw]) => stick(ox + c * cell, oy + rw * cell, sw, sh));
     }
+  }
+  // Picture tiles, each drawn in a 32 x 32 box.
+  const P = (d) => new Path2D(d);
+  function fillStroke(path, fill, lw) { ctx.fillStyle = fill; ctx.fill(path); ctx.strokeStyle = INK; ctx.lineWidth = lw || 1.6; ctx.stroke(path); }
+  function circ(cx, cy, r, fill, lw) { const p = new Path2D(); p.arc(cx, cy, r, 0, 7); fillStroke(p, fill, lw); }
+  const PIC_DRAW = {
+    lantern() { ctx.fillStyle = '#e3c67a'; ctx.beginPath(); ctx.roundRect(11, 1.5, 10, 3.5, 1); ctx.fill(); ctx.beginPath(); ctx.roundRect(11, 24, 10, 3, 1); ctx.fill(); fillStroke(P('M16 5 c-8 0-13 5-13 10.5 S8 25 16 25 s13-4 13-9.5 S24 5 16 5 z'), '#d9342b'); ctx.strokeStyle = '#8a1b1b'; ctx.lineWidth = 1.2; for (const dx of [-5, 0, 5]) { ctx.beginPath(); ctx.moveTo(16 + dx, 6); ctx.quadraticCurveTo(16 + dx * 1.3, 15, 16 + dx, 24); ctx.stroke(); } ctx.fillStyle = '#e3c67a'; ctx.fillRect(14.5, 27, 3, 4); },
+    fish() { fillStroke(P('M4 16 c4-7 10-9 16-9 c3 0 6 2 8 5 l-3 4 l3 4 c-2 3-5 5-8 5 c-6 0-12-2-16-9 z'), '#3b86c9'); fillStroke(P('M24 12 l5-5 v18 l-5-5'), '#2b6aa6', 1.4); circ(9, 14.5, 1.6, LIGHT, 1); ctx.fillStyle = INK; ctx.beginPath(); ctx.arc(9.3, 14.5, 0.8, 0, 7); ctx.fill(); ctx.strokeStyle = '#2b6aa6'; ctx.lineWidth = 1.2; for (const x of [15, 18.5]) { ctx.beginPath(); ctx.arc(x, 16, 4, -1.1, 1.1); ctx.stroke(); } },
+    rice() { fillStroke(P('M8 14 c0-6 4-9 8-9 s8 3 8 9 z'), '#fdf6e3'); ctx.fillStyle = '#d9342b'; for (const [x, y] of [[13, 9], [18, 8], [16, 12]]) { ctx.beginPath(); ctx.arc(x, y, 0.9, 0, 7); ctx.fill(); } fillStroke(P('M3 14 h26 c0 7-4 11-8 12 h-10 c-4-1-8-5-8-12 z'), '#e8783c'); ctx.fillStyle = '#c45a22'; ctx.fillRect(8, 24.5, 16, 2.5); },
+    teapot() { fillStroke(P('M7 13 h17 c3 0 4 2 4 5 c0 5-3 9-7 9 h-11 c-4 0-7-4-7-9 c0-3 1-5 4-5 z'), '#4f8f6b'); fillStroke(P('M25 15 l5-4 v6 l-4 2'), '#4f8f6b', 1.4); fillStroke(P('M8 14 c-4 1-6 4-5 8'), 'transparent', 2); ctx.fillStyle = '#4f8f6b'; ctx.beginPath(); ctx.roundRect(11, 10, 9, 4, 1.5); ctx.fill(); ctx.stroke(); circ(15.5, 8.5, 2, '#e3c67a', 1.2); ctx.fillStyle = LIGHT; ctx.beginPath(); ctx.ellipse(13, 19, 2.2, 1.4, 0, 0, 7); ctx.fill(); },
+    dumpling() { fillStroke(P('M3 21 c0-8 6-13 13-13 s13 5 13 13 c-4 2-9 3-13 3 s-9-1-13-3 z'), '#f6e2b8'); ctx.strokeStyle = '#c69a5a'; ctx.lineWidth = 1.3; for (let i = 0; i < 5; i++) { const x = 7 + i * 4.5; ctx.beginPath(); ctx.moveTo(x, 10 + Math.abs(i - 2) * 1.2); ctx.quadraticCurveTo(x + 1.5, 7 + Math.abs(i - 2) * 1.2, x + 3, 10 + Math.abs(i - 2) * 1.2); ctx.stroke(); } ctx.fillStyle = '#e8c88a'; ctx.beginPath(); ctx.ellipse(16, 22, 11, 2, 0, 0, 7); ctx.fill(); },
+    chilli() { fillStroke(P('M8 6 c-2 6 0 14 6 19 c3 2 7 3 11 2 c-3-1-5-3-7-6 c-3-5-4-10-3-14 c-2-1-5-1-7-1 z'), '#d9342b'); fillStroke(P('M14 5 c3-2 6-2 8 0 c-3 1-5 1-8 2 z'), '#3f8f45', 1.2); ctx.fillStyle = 'rgba(255,255,255,.35)'; ctx.beginPath(); ctx.ellipse(12, 12, 1.4, 4, -0.3, 0, 7); ctx.fill(); },
+    fan() { fillStroke(P('M16 27 L3 12 A16 16 0 0 1 29 12 Z'), '#e86f8a'); ctx.strokeStyle = INK; ctx.lineWidth = 1.1; for (const a of [-1.25, -0.9, -0.55, -0.2, 0.15]) { ctx.beginPath(); ctx.moveTo(16, 27); ctx.lineTo(16 + Math.cos(a - Math.PI / 2 + 0.7) * 15, 27 + Math.sin(a - Math.PI / 2 + 0.7) * 15); ctx.stroke(); } ctx.fillStyle = '#f9d5dd'; ctx.beginPath(); ctx.arc(16, 27, 2.5, 0, 7); ctx.fill(); ctx.stroke(); },
+    sun() { ctx.strokeStyle = '#e8a23c'; ctx.lineWidth = 2.2; ctx.lineCap = 'round'; for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4; ctx.beginPath(); ctx.moveTo(16 + Math.cos(a) * 10.5, 16 + Math.sin(a) * 10.5); ctx.lineTo(16 + Math.cos(a) * 14, 16 + Math.sin(a) * 14); ctx.stroke(); } circ(16, 16, 7.5, '#f2c233'); ctx.fillStyle = '#fff2b0'; ctx.beginPath(); ctx.arc(13.5, 13.5, 2, 0, 7); ctx.fill(); },
+    moon() { fillStroke(P('M20 3 a13 13 0 1 0 9 22 a10 10 0 0 1-9-22 z'), '#f2c233'); ctx.fillStyle = '#d9a52a'; for (const [x, y, r] of [[11, 10, 1.6], [9, 19, 1.2], [15, 24, 1.4]]) { ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill(); } },
+    star() { const p = new Path2D(); for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, r = i % 2 ? 6 : 14; p[i ? 'lineTo' : 'moveTo'](16 + Math.cos(a) * r, 17 + Math.sin(a) * r); } p.closePath(); ctx.lineJoin = 'round'; fillStroke(p, '#f2c233'); ctx.fillStyle = '#fff2b0'; ctx.beginPath(); ctx.arc(13, 12, 1.8, 0, 7); ctx.fill(); },
+    cloud() { fillStroke(P('M8 25 c-4 0-6-3-6-6 c0-3 2-5 5-5 c0-5 4-8 8-8 c4 0 7 3 8 6 c4 0 7 3 7 6 c0 4-3 7-7 7 z'), '#bfe0f5'); ctx.fillStyle = LIGHT; ctx.beginPath(); ctx.arc(12, 13, 3, 0, 7); ctx.fill(); },
+    leaf() { fillStroke(P('M4 28 C4 12 14 3 29 3 C29 18 19 28 4 28 z'), '#58a65c'); ctx.strokeStyle = '#2f6b4a'; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.moveTo(5, 27); ctx.quadraticCurveTo(14, 16, 26, 6); ctx.stroke(); for (const t of [0.3, 0.5, 0.7]) { const x = 5 + (26 - 5) * t, y = 27 - (27 - 6) * t; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 4, y + 1); ctx.moveTo(x, y); ctx.lineTo(x - 1, y - 4); ctx.stroke(); } },
+    flower() { for (let i = 0; i < 5; i++) { const a = -Math.PI / 2 + i * Math.PI * 2 / 5; circ(16 + Math.cos(a) * 7, 16 + Math.sin(a) * 7, 5.5, '#e86f8a', 1.4); } circ(16, 16, 4.5, '#f2c233', 1.4); },
+    heart() { fillStroke(P('M16 28 C6 20 2 15 2 10 a7 7 0 0 1 14-2 a7 7 0 0 1 14 2 c0 5-4 10-14 18 z'), '#d9342b'); ctx.fillStyle = 'rgba(255,255,255,.4)'; ctx.beginPath(); ctx.ellipse(9, 10, 2, 3, -0.6, 0, 7); ctx.fill(); },
+    cherry() { ctx.strokeStyle = '#3f8f45'; ctx.lineWidth = 2; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(11, 21); ctx.quadraticCurveTo(14, 8, 20, 3); ctx.moveTo(22, 21); ctx.quadraticCurveTo(21, 10, 20, 3); ctx.stroke(); fillStroke(P('M20 3 c4-1 7 1 8 4 c-4 1-7 0-8-4 z'), '#58a65c', 1.2); circ(10, 23, 5.5, '#d9342b'); circ(23, 23, 5.5, '#d9342b'); ctx.fillStyle = 'rgba(255,255,255,.45)'; for (const x of [8, 21]) { ctx.beginPath(); ctx.arc(x, 21, 1.5, 0, 7); ctx.fill(); } },
+  };
+  function picMark(k, bx, by, bw, bh) {
+    const s = Math.min(bw, bh) / 32; ctx.save(); ctx.translate(bx + (bw - 32 * s) / 2, by + (bh - 32 * s) / 2); ctx.scale(s, s); ctx.lineJoin = 'round'; ctx.lineCap = 'round'; PIC_DRAW[k.pic](); ctx.restore();
   }
   function drawTileAt(x, y, w, k, o) {
     o = o || {}; const u = w / 10, h = w * 1.34, r = 1.2 * u;
@@ -607,15 +617,13 @@
       ctx.save(); ctx.shadowColor = 'rgba(0,0,0,.35)'; ctx.shadowBlur = 0.3 * u; ctx.shadowOffsetY = 0.15 * u; const cg = ctx.createLinearGradient(0, cy, 0, cy + ch); cg.addColorStop(0, '#e1c272'); cg.addColorStop(1, '#b48f36'); rr(cx, cy, cw, ch, 0.55 * u, cg); ctx.restore();
       ctx.fillStyle = 'rgba(255,255,255,.45)'; ctx.fillRect(cx + 0.3 * u, cy, cw - 0.6 * u, Math.max(1, 0.12 * u));
       ctx.fillStyle = '#2b2419'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(label, cx + cw / 2, cy + ch / 2 + 0.1 * u); ctx.textBaseline = 'alphabetic';
-    } else if (k.suit === 'dot' || k.suit === 'bam' || k.suit === 'char') {
-      ctx.fillStyle = '#2b2419'; ctx.font = `800 ${3.6 * u}px ${FD}`; ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText(String(k.n), x + 1.0 * u, y + 0.3 * u); ctx.textBaseline = 'alphabetic';
-      ctx.save(); suitMark(k, x + 1.3 * u, y + h - 1.6 * u - 6.4 * u, w - 2.6 * u, 6.4 * u, u); ctx.restore();
-    } else { // honours and bonus tiles: one big character with a small label
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      if (k.label === 'WHITE') { ctx.strokeStyle = k.color; ctx.lineWidth = 0.45 * u; ctx.beginPath(); ctx.roundRect(x + 2.2 * u, y + 2.4 * u, w - 4.4 * u, h - 6.4 * u, 0.6 * u); ctx.stroke(); ctx.lineWidth = 0.2 * u; ctx.beginPath(); ctx.roundRect(x + 3.1 * u, y + 3.3 * u, w - 6.2 * u, h - 8.2 * u, 0.4 * u); ctx.stroke(); }
-      else { ctx.fillStyle = k.color; ctx.font = `700 ${5.2 * u}px ${CJK}`; ctx.fillText(k.ch, x + w / 2, y + h * 0.42); }
-      ctx.fillStyle = k.suit === 'wind' ? '#5a4b34' : k.color; ctx.font = `800 ${1.25 * u}px ${FB}`; ctx.letterSpacing = (0.12 * u) + 'px'; ctx.fillText(k.label, x + w / 2 + 0.06 * u, y + h - 2.3 * u); ctx.letterSpacing = '0px';
-      ctx.textBaseline = 'alphabetic';
+    } else if (k.suit === 'dot' || k.suit === 'bam') {
+      ctx.fillStyle = '#5a4b34'; ctx.font = `800 ${1.7 * u}px ${FD}`; ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText(String(k.n), x + 0.8 * u, y + 0.45 * u); ctx.textBaseline = 'alphabetic';
+      ctx.save(); suitMark(k, x + 1.3 * u, y + 2.3 * u, w - 2.6 * u, h - 4.3 * u); ctx.restore();
+    } else if (k.suit === 'num') {
+      ctx.fillStyle = NUM_COL; ctx.font = `800 ${7.6 * u}px ${FD}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(String(k.n), x + w / 2, y + h * 0.47); ctx.textBaseline = 'alphabetic';
+    } else {
+      ctx.save(); picMark(k, x + 1.4 * u, y + 2.2 * u, w - 2.8 * u, h - 4.6 * u); ctx.restore();
     }
     if (o.shaded) { ctx.fillStyle = 'rgba(10,36,27,.44)'; ctx.fillRect(x, y, w, h); }
     ctx.restore();
