@@ -44,6 +44,9 @@
   .btn.line.dark { color: var(--ink); box-shadow: inset 0 0 0 1.5px rgba(43,36,25,.4); }
   .btn:focus-visible { outline: 3px solid var(--brass); outline-offset: 2px; }
   .btn:disabled { opacity: .6; cursor: default; }
+  .link.danger { color: var(--red); margin-top: -6px; }
+  .players .av { position: relative; }
+  .players .av .pen { position: absolute; right: -2px; bottom: -2px; width: 18px; height: 18px; border-radius: 50%; background: #d9b85c; color: var(--ink); display: grid; place-items: center; box-shadow: 0 1px 2px rgba(0,0,0,.4); }
   .link { align-self: center; margin-top: 6px; font-size: 13px; letter-spacing: .14em; text-transform: uppercase; font-weight: 700; color: var(--gold-ink); background: none; border: 0; padding: 10px 14px; cursor: pointer; font-family: inherit; }
 
   /* Ivory panel (results, leaderboard, add player) */
@@ -145,6 +148,7 @@
       <button class="btn line dark" type="button" id="nameCancel" style="flex: 1">Cancel</button>
       <button class="btn gold" type="submit" id="nameSave" style="flex: 1">Save</button>
     </div>
+    <button type="button" class="link danger" id="nameDelete" hidden>Delete player</button>
   </form>
 </div>
 
@@ -224,6 +228,17 @@
   let playerId = null; try { playerId = Number(localStorage.getItem('cm_pid')) || null; } catch (e) {}
   async function saveProgress() { if (!playerId) return; try { await fetch(SUPA_URL + '/rest/v1/city_mahjong_players?id=eq.' + playerId, { method: 'PATCH', headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY, 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify({ unlocked }) }); } catch (e) {} }
   function choosePlayer(p) { playerName = p.name; playerId = p.id; unlocked = Math.max(1, Math.min(NAMES.length, p.unlocked || 1)); if (levelOf(layoutName) > unlocked) layoutName = NAMES[unlocked - 1]; try { localStorage.setItem('cm_name', playerName); localStorage.setItem('cm_pid', playerId); localStorage.setItem('cm_unlocked', unlocked); } catch (e) {} }
+  const SUPA_H = () => ({ apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY, 'Content-Type': 'application/json', Prefer: 'return=minimal' });
+  async function updatePlayer(p, name, photo) {
+    const res = await fetch(SUPA_URL + '/rest/v1/city_mahjong_players?id=eq.' + p.id, { method: 'PATCH', headers: SUPA_H(), body: JSON.stringify({ name, photo: photo || null }) });
+    if (!res.ok) throw new Error('update');
+    if (name !== p.name) await fetch(SUPA_URL + '/rest/v1/city_mahjong_scores?name=eq.' + encodeURIComponent(p.name), { method: 'PATCH', headers: SUPA_H(), body: JSON.stringify({ name }) }).catch(() => {});
+  }
+  async function deletePlayer(p) {
+    await fetch(SUPA_URL + '/rest/v1/city_mahjong_scores?name=eq.' + encodeURIComponent(p.name), { method: 'DELETE', headers: SUPA_H() }).catch(() => {});
+    const res = await fetch(SUPA_URL + '/rest/v1/city_mahjong_players?id=eq.' + p.id, { method: 'DELETE', headers: SUPA_H() });
+    if (!res.ok) throw new Error('delete');
+  }
   async function savePlayer(name, photo) {
     const body = { name, photo: photo || null, device_id: deviceId(), unlocked };
     const res = await fetch(SUPA_URL + '/rest/v1/city_mahjong_players?on_conflict=device_id,name', { method: 'POST', headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(body) });
@@ -440,19 +455,30 @@
 
   // --- Name and win sheets ---
   const nameSheet = document.getElementById('nameSheet'), nameInput = document.getElementById('nameInput'), photoInput = document.getElementById('photoInput'), photoPrev = document.getElementById('photoBtn');
-  let pendingPhoto = null;
+  let pendingPhoto = null, editing = null;
+  const delBtn = document.getElementById('nameDelete');
   function askName(existing) {
-    pendingPhoto = existing && existing.photo || null; nameInput.value = existing ? existing.name : '';
+    editing = existing || null; pendingPhoto = existing && existing.photo || null; nameInput.value = existing ? existing.name : '';
     document.getElementById('nameTitle').textContent = existing ? 'Edit player' : 'Add a player';
+    delBtn.hidden = !existing; delBtn.textContent = 'Delete player'; delBtn.dataset.armed = '';
     photoPrev.style.backgroundImage = pendingPhoto ? `url(${pendingPhoto})` : ''; photoPrev.classList.toggle('has', !!pendingPhoto);
     nameSheet.hidden = false; setTimeout(() => nameInput.focus(), 50);
   }
   photoInput.addEventListener('change', async () => { const f = photoInput.files && photoInput.files[0]; if (!f) return; try { pendingPhoto = await shrinkPhoto(f); photoPrev.style.backgroundImage = `url(${pendingPhoto})`; photoPrev.classList.add('has'); } catch (e) { photoPrev.classList.remove('has'); } });
   document.getElementById('nameCancel').addEventListener('click', () => { nameSheet.hidden = true; });
+  delBtn.addEventListener('click', async () => {
+    if (!editing) return;
+    if (!delBtn.dataset.armed) { delBtn.dataset.armed = '1'; delBtn.textContent = 'Tap again to delete ' + editing.name + ' and their scores'; return; }
+    delBtn.disabled = true; delBtn.textContent = 'Deleting…';
+    try { await deletePlayer(editing); } catch (x) {}
+    delBtn.disabled = false; nameSheet.hidden = true;
+    if (editing.id === playerId || editing.name === playerName) { playerName = ''; playerId = null; unlocked = 1; layoutName = NAMES[0]; try { localStorage.removeItem('cm_name'); localStorage.removeItem('cm_pid'); localStorage.removeItem('cm_unlocked'); } catch (e) {} }
+    editing = null; await loadPlayers(); if (!S.running) reset(); syncHome();
+  });
   document.getElementById('nameForm').addEventListener('submit', async e => {
     e.preventDefault(); const name = nameInput.value.trim().slice(0, 20); if (!name) return;
     const btn = document.getElementById('nameSave'); btn.disabled = true; btn.textContent = 'Saving\u2026';
-    try { await savePlayer(name, pendingPhoto); } catch (x) {}
+    try { if (editing) await updatePlayer(editing, name, pendingPhoto); else await savePlayer(name, pendingPhoto); } catch (x) {}
     btn.disabled = false; btn.textContent = 'Save';
     nameSheet.hidden = true; await loadPlayers(); const mine = PLAYERS.find(p => p.name === name && p.device_id === deviceId()) || PLAYERS.find(p => p.name === name); if (mine) choosePlayer(mine); else playerName = name; if (!S.running) reset(); syncHome();
   });
@@ -488,7 +514,7 @@
     });
     const cur = levelsEl.querySelector('.cur'); if (cur) cur.scrollIntoView({ block: 'nearest' });
     const strip = document.getElementById('players'); strip.innerHTML = '';
-    for (const p of PLAYERS) { const b = document.createElement('button'); b.type = 'button'; b.setAttribute('aria-selected', p.name === playerName); const av = document.createElement('div'); av.className = 'av'; if (p.photo) av.style.backgroundImage = `url(${p.photo})`; else av.textContent = p.name[0].toUpperCase(); const sp = document.createElement('span'); sp.textContent = p.name; b.append(av, sp); b.addEventListener('click', () => { if (playerName === p.name) askName(p); else { choosePlayer(p); reset(); syncHome(); } }); strip.appendChild(b); }
+    for (const p of PLAYERS) { const b = document.createElement('button'); b.type = 'button'; b.setAttribute('aria-selected', p.name === playerName); const av = document.createElement('div'); av.className = 'av'; if (p.photo) av.style.backgroundImage = `url(${p.photo})`; else av.textContent = p.name[0].toUpperCase(); if (p.name === playerName) av.insertAdjacentHTML('beforeend', '<span class="pen" aria-hidden="true"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21 L7 20 L20 7 L17 4 L4 17 Z"/></svg></span>'); const sp = document.createElement('span'); sp.textContent = p.name; b.append(av, sp); b.addEventListener('click', () => { if (playerName === p.name) askName(p); else { choosePlayer(p); reset(); syncHome(); } }); strip.appendChild(b); }
     const add = document.createElement('button'); add.type = 'button'; add.className = 'add'; add.innerHTML = '<div class="av">+</div><span>Add</span>'; add.addEventListener('click', () => askName(null)); strip.appendChild(add);
     const d = new Date(); document.getElementById('homeDay').textContent = d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' }) + ' · same board for everyone';
     document.getElementById('homePlay').textContent = 'Play · Level ' + levelOf(layoutName);
