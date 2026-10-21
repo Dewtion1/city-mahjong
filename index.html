@@ -201,12 +201,20 @@
   const FD = "'Baloo 2', 'Nunito', system-ui, sans-serif", FB = "'Nunito', 'Segoe UI', system-ui, sans-serif";
   // Palette from the design: the old names are kept so the game logic's toast colours still resolve.
   const C = { ivory: '#efe5cf', muted: '#cbd6c8', brass: '#e3c67a', brass2: '#b48f36', ink: '#2b2419', red: '#a8463c', tile: '#f0e4ca', cash: '#e3c67a', sel: '#e3c67a', accent: '#d9705f', paper: '#efe5cf' };
-  const SUIT = { bus: '#2b2419', cab: '#7a5a1a', park: '#2f5d3f' };
   function rng(seed) { let s = seed >>> 0 || 1; return () => { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; }; }
 
-  // --- Tile kinds: three London suits of nine, plus seven family faces = 34 kinds. ---
+  // --- Tile kinds: the classic 42 (dots, bamboo, characters, winds, dragons, flowers, seasons) so every pair on an 84-tile board is unique, plus family faces. ---
   const KINDS = [];
-  for (const suit of ['bus', 'cab', 'park']) for (let n = 1; n <= 9; n++) KINDS.push({ suit, n });
+  const CN = ['一', '二', '三', '四', '五', '六', '七', '八', '九'];
+  for (const suit of ['dot', 'bam', 'char']) for (let n = 1; n <= 9; n++) KINDS.push({ suit, n });
+  const HONOURS = [
+    ['wind', '東', 'EAST', '#2b2419'], ['wind', '南', 'SOUTH', '#2b2419'], ['wind', '西', 'WEST', '#2b2419'], ['wind', '北', 'NORTH', '#2b2419'],
+    ['dragon', '中', 'RED', '#d9342b'], ['dragon', '發', 'GREEN', '#3f8f45'], ['dragon', '', 'WHITE', '#2b5fa8'],
+    ['flower', '梅', 'PLUM', '#c23b6f'], ['flower', '蘭', 'ORCHID', '#c23b6f'], ['flower', '菊', 'MUM', '#c23b6f'], ['flower', '竹', 'BAMBOO', '#c23b6f'],
+    ['season', '春', 'SPRING', '#2b7fa8'], ['season', '夏', 'SUMMER', '#2b7fa8'], ['season', '秋', 'AUTUMN', '#2b7fa8'], ['season', '冬', 'WINTER', '#2b7fa8'],
+  ];
+  HONOURS.forEach(([suit, ch, label, color], i) => KINDS.push({ suit, n: i, ch, label, color }));
+  const SUIT_KINDS = KINDS.length; // 42
   const faceImgs = FACES.map(src => { const im = new Image(); im.src = src; return im; });
   const FACE_NAMES = ['', '', '', '', '', '', 'Iain'];
   faceImgs.forEach((im, i) => KINDS.push({ suit: 'face', n: i, who: FACE_NAMES[i] || 'Family ' + (i + 1) }));
@@ -219,7 +227,7 @@
       PLAYERS = (await res.json()).filter(p => p.name);
       const seen = new Set(FACES); const withPhoto = PLAYERS.filter(p => p.photo && /^data:image\//.test(p.photo) && !seen.has(p.photo) && (seen.add(p.photo), true));
       const loaded = await Promise.all(withPhoto.map(p => new Promise(res => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = p.photo; })));
-      faceImgs.length = FACES.length; KINDS.length = 27 + FACES.length;
+      faceImgs.length = FACES.length; KINDS.length = SUIT_KINDS + FACES.length;
       loaded.forEach((im, i) => { if (im && im.naturalWidth) { faceImgs.push(im); KINDS.push({ suit: 'face', n: faceImgs.length - 1, who: withPhoto[i].name }); } });
       return true;
     } catch (e) { return false; }
@@ -543,25 +551,38 @@
 
   // --- Drawing: the tile spec from the design, base unit u = width / 10 ---
   function rr(x, y, w, h, r, fill) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); ctx.fillStyle = fill; ctx.fill(); }
-  const INK = '#2b2419', LIGHT = '#f3e8d0';
-  const CAB_BODY = new Path2D('M2.5 21 V15.5 c0-1.8 1.2-3.3 3-3.7 l4.5-1 L13.2 5.6 c.5-.7 1.3-1.1 2.1-1.1 H22 c1.2 0 2.3.6 3 1.6 l3.2 5 c.8 1.2 1.6 2.4 1.6 4.2 V21 Z');
-  const CAB_WIN = new Path2D('M14.5 7 H21.5 L24.3 11.2 H11.8 Z');
-  const TREE = new Path2D('M16 2.2 c-3 0-5.6 2-6.4 4.7 C6 7.1 3.4 9.7 3.4 12.8 c0 3.4 2.8 6.2 6.2 6.2 h12.8 c3.4 0 6.2-2.8 6.2-6.2 0-3.1-2.4-5.7-5.6-6 C22.2 4.2 19.4 2.2 16 2.2 z');
-  function wheel(x, y) { ctx.fillStyle = INK; ctx.beginPath(); ctx.arc(x, y, 3.6, 0, 7); ctx.fill(); ctx.fillStyle = LIGHT; ctx.beginPath(); ctx.arc(x, y, 1.4, 0, 7); ctx.fill(); }
-  function suitIcon(suit) { // colour-filled, ink-outlined marks in a 32 x 28 box
-    ctx.strokeStyle = INK; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-    if (suit === 'bus') {
-      ctx.lineWidth = 1.8; ctx.beginPath(); ctx.roundRect(2, 2, 28, 20, 4.5); ctx.fillStyle = '#d9342b'; ctx.fill(); ctx.stroke();
-      ctx.fillStyle = LIGHT; for (const [x, y, h] of [[5, 5, 4], [11, 5, 4], [17, 5, 4], [23, 5, 4], [5, 12.5, 4], [11, 12.5, 4], [17, 12.5, 4], [23, 12.5, 7.5]]) { ctx.beginPath(); ctx.roundRect(x, y, 4.5, h, 1); ctx.fill(); }
-      wheel(9, 23.5); wheel(23, 23.5);
-    } else if (suit === 'cab') {
-      ctx.lineWidth = 1.8; ctx.beginPath(); ctx.roundRect(11, 1.5, 10, 4, 1.5); ctx.fillStyle = INK; ctx.fill();
-      ctx.fillStyle = '#f2c233'; ctx.fill(CAB_BODY); ctx.stroke(CAB_BODY);
-      ctx.lineWidth = 1.2; ctx.fillStyle = LIGHT; ctx.fill(CAB_WIN); ctx.stroke(CAB_WIN);
-      wheel(9, 22); wheel(23.5, 22);
-    } else {
-      ctx.lineWidth = 1.6; ctx.beginPath(); ctx.roundRect(13.6, 15, 4.8, 11.5, 1.6); ctx.fillStyle = '#8b5a2b'; ctx.fill(); ctx.stroke();
-      ctx.lineWidth = 1.8; ctx.fillStyle = '#58a65c'; ctx.fill(TREE); ctx.stroke(TREE);
+  const INK = '#2b2419', LIGHT = '#f3e8d0', CJK = "'PingFang SC', 'Hiragino Sans GB', 'Noto Sans CJK SC', 'Noto Sans SC', 'Microsoft YaHei', 'Heiti SC', sans-serif";
+  const DOT_COL = ['#2b5fa8', '#3f8f45', '#d9342b'];
+  // Classic dot and bamboo arrangements on a 3-column grid (col, row); rows is the grid height.
+  const DOTS = { 1: [[1, 1]], 2: [[1, 0], [1, 2]], 3: [[0, 0], [1, 1], [2, 2]], 4: [[0, 0], [2, 0], [0, 2], [2, 2]], 5: [[0, 0], [2, 0], [1, 1], [0, 2], [2, 2]], 6: [[0, 0], [2, 0], [0, 1], [2, 1], [0, 2], [2, 2]], 7: [[0, 0], [1, 0.5], [2, 1], [0, 2], [2, 2], [0, 3], [2, 3]], 8: [[0, 0], [2, 0], [0, 1], [2, 1], [0, 2], [2, 2], [0, 3], [2, 3]], 9: [[0, 0], [1, 0], [2, 0], [0, 1], [1, 1], [2, 1], [0, 2], [1, 2], [2, 2]] };
+  const BAMS = { 1: [[1, 1]], 2: [[1, 0], [1, 2]], 3: [[1, 0], [0, 2], [2, 2]], 4: [[0, 0], [2, 0], [0, 2], [2, 2]], 5: [[0, 0], [2, 0], [1, 1], [0, 2], [2, 2]], 6: [[0, 0], [1, 0], [2, 0], [0, 2], [1, 2], [2, 2]], 7: [[1, 0], [0, 1], [1, 1], [2, 1], [0, 2], [1, 2], [2, 2]], 8: [[0, 0], [1, 0], [2, 0], [0, 1], [2, 1], [0, 2], [1, 2], [2, 2]], 9: [[0, 0], [1, 0], [2, 0], [0, 1], [1, 1], [2, 1], [0, 2], [1, 2], [2, 2]] };
+  function dot(cx, cy, r, col) {
+    ctx.fillStyle = col; ctx.beginPath(); ctx.arc(cx, cy, r, 0, 7); ctx.fill();
+    ctx.strokeStyle = INK; ctx.lineWidth = Math.max(0.6, r * 0.18); ctx.stroke();
+    ctx.fillStyle = LIGHT; ctx.beginPath(); ctx.arc(cx, cy, r * 0.42, 0, 7); ctx.fill();
+    ctx.fillStyle = col; ctx.beginPath(); ctx.arc(cx, cy, r * 0.18, 0, 7); ctx.fill();
+  }
+  function stick(cx, cy, sw, sh) {
+    ctx.fillStyle = '#3f8f45'; ctx.strokeStyle = INK; ctx.lineWidth = Math.max(0.6, sw * 0.14);
+    ctx.beginPath(); ctx.roundRect(cx - sw / 2, cy - sh / 2, sw, sh, sw * 0.35); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = LIGHT; ctx.fillRect(cx - sw / 2 + sw * 0.15, cy - sw * 0.14, sw * 0.7, sw * 0.28);
+  }
+  // Draw the suit mark for a numbered kind inside box (bx, by, bw, bh).
+  function suitMark(k, bx, by, bw, bh, u) {
+    if (k.suit === 'dot') {
+      const pts = DOTS[k.n], rows = k.n >= 7 ? 4 : 3, cell = Math.min(bw / 3, bh / rows), r = cell * (k.n === 1 ? 0.95 : 0.4);
+      const ox = bx + (bw - cell * 3) / 2 + cell / 2, oy = by + (bh - cell * rows) / 2 + cell / 2;
+      pts.forEach(([c, rw], i) => dot(ox + c * cell, oy + rw * cell, r, k.n === 1 ? '#3f8f45' : DOT_COL[(i + k.n) % 3]));
+      if (k.n === 1) { ctx.strokeStyle = '#d9342b'; ctx.lineWidth = Math.max(0.8, r * 0.16); ctx.beginPath(); ctx.arc(ox + cell, oy + cell, r * 0.66, 0, 7); ctx.stroke(); }
+    } else if (k.suit === 'bam') {
+      const pts = BAMS[k.n], cell = Math.min(bw / 3, bh / 3), sw = cell * 0.52, sh = k.n === 1 ? bh * 0.9 : cell * 0.96;
+      const ox = bx + (bw - cell * 3) / 2 + cell / 2, oy = by + (bh - cell * 3) / 2 + cell / 2;
+      pts.forEach(([c, rw]) => stick(ox + c * cell, oy + rw * cell, k.n === 1 ? sw * 1.5 : sw, sh));
+    } else { // characters: Chinese numeral over a red 萬
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = INK; ctx.font = `700 ${bh * 0.42}px ${CJK}`; ctx.fillText(CN[k.n - 1], bx + bw / 2, by + bh * 0.26);
+      ctx.fillStyle = '#d9342b'; ctx.font = `700 ${bh * 0.5}px ${CJK}`; ctx.fillText('萬', bx + bw / 2, by + bh * 0.72);
+      ctx.textBaseline = 'alphabetic';
     }
   }
   function drawTileAt(x, y, w, k, o) {
@@ -586,9 +607,15 @@
       ctx.save(); ctx.shadowColor = 'rgba(0,0,0,.35)'; ctx.shadowBlur = 0.3 * u; ctx.shadowOffsetY = 0.15 * u; const cg = ctx.createLinearGradient(0, cy, 0, cy + ch); cg.addColorStop(0, '#e1c272'); cg.addColorStop(1, '#b48f36'); rr(cx, cy, cw, ch, 0.55 * u, cg); ctx.restore();
       ctx.fillStyle = 'rgba(255,255,255,.45)'; ctx.fillRect(cx + 0.3 * u, cy, cw - 0.6 * u, Math.max(1, 0.12 * u));
       ctx.fillStyle = '#2b2419'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(label, cx + cw / 2, cy + ch / 2 + 0.1 * u); ctx.textBaseline = 'alphabetic';
-    } else {
+    } else if (k.suit === 'dot' || k.suit === 'bam' || k.suit === 'char') {
       ctx.fillStyle = '#2b2419'; ctx.font = `800 ${3.6 * u}px ${FD}`; ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText(String(k.n), x + 1.0 * u, y + 0.3 * u); ctx.textBaseline = 'alphabetic';
-      const bw = w - 2.6 * u, bh = 5.6 * u, s = Math.min(bw / 32, bh / 28); ctx.save(); ctx.translate(x + w / 2 - 16 * s, y + h - 1.7 * u - 28 * s); ctx.scale(s, s); suitIcon(k.suit); ctx.restore();
+      ctx.save(); suitMark(k, x + 1.3 * u, y + h - 1.6 * u - 6.4 * u, w - 2.6 * u, 6.4 * u, u); ctx.restore();
+    } else { // honours and bonus tiles: one big character with a small label
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      if (k.label === 'WHITE') { ctx.strokeStyle = k.color; ctx.lineWidth = 0.45 * u; ctx.beginPath(); ctx.roundRect(x + 2.2 * u, y + 2.4 * u, w - 4.4 * u, h - 6.4 * u, 0.6 * u); ctx.stroke(); ctx.lineWidth = 0.2 * u; ctx.beginPath(); ctx.roundRect(x + 3.1 * u, y + 3.3 * u, w - 6.2 * u, h - 8.2 * u, 0.4 * u); ctx.stroke(); }
+      else { ctx.fillStyle = k.color; ctx.font = `700 ${5.2 * u}px ${CJK}`; ctx.fillText(k.ch, x + w / 2, y + h * 0.42); }
+      ctx.fillStyle = k.suit === 'wind' ? '#5a4b34' : k.color; ctx.font = `800 ${1.25 * u}px ${FB}`; ctx.letterSpacing = (0.12 * u) + 'px'; ctx.fillText(k.label, x + w / 2 + 0.06 * u, y + h - 2.3 * u); ctx.letterSpacing = '0px';
+      ctx.textBaseline = 'alphabetic';
     }
     if (o.shaded) { ctx.fillStyle = 'rgba(10,36,27,.44)'; ctx.fillRect(x, y, w, h); }
     ctx.restore();
